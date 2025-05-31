@@ -6,13 +6,14 @@ import org.geoserver.catalog.LayerInfo;
 import org.geoserver.wps.gs.GeoServerProcess;
 import org.geotools.api.data.SimpleFeatureSource;
 import org.geotools.api.feature.simple.SimpleFeature;
+import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
-import org.geotools.api.filter.expression.PropertyName;
+import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.factory.CommonFactoryFinder;
+import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.process.ProcessException;
 import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
@@ -20,7 +21,10 @@ import org.geotools.process.factory.DescribeResult;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
 @DescribeProcess(title = "temporalGridChange", description = "Computes the gridded change between two date ranges for the soil moisture dataset.")
 public class TemporalGridChange implements GeoServerProcess {
@@ -29,7 +33,7 @@ public class TemporalGridChange implements GeoServerProcess {
     TemporalGridChange(Catalog catalog) {
         this.catalog = catalog;
     }
-    @DescribeResult(name = "result", description = "The gridded change between the two date ranges.")
+    @DescribeResult(description = "The gridded change between the two date ranges.")
     public SimpleFeatureCollection execute(
             @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime1,
             @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime1,
@@ -74,14 +78,23 @@ public class TemporalGridChange implements GeoServerProcess {
         } catch (IOException e) {
             throw new ProcessException("Error getting features", e);
         }
-        try (SimpleFeatureIterator iterator = range1.features()) {
 
-            while (iterator.hasNext()) {
-                SimpleFeature feature = iterator.next();
-                System.out.println("Feature: " + feature.getID());
-            }
+        GridCalculator gridCalculator = new GridCalculator(5000);
+        Map<GridCell, Double> grid1 = gridCalculator.aggregate(range1);
+
+        List<SimpleFeature> results = new ArrayList<>();
+        SimpleFeatureType resultType = gridCalculator.getResultFeatureType();
+        SimpleFeatureBuilder builder = new SimpleFeatureBuilder(resultType);
+        int fid = 0;
+
+        for (GridCell cell: grid1.keySet()) {
+            double val1 = grid1.getOrDefault(cell, 0.0);
+
+            builder.add(cell.getPolygon());
+            builder.add(val1);
+            results.add(builder.buildFeature(String.valueOf(fid++)));
         }
 
-        return range1;
+        return new ListFeatureCollection(resultType, results);
     }
 }
