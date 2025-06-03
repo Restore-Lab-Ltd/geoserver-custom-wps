@@ -2,10 +2,12 @@ package co.nz.restorelab;
 
 import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
+import org.geotools.api.referencing.FactoryException;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTSFactoryFinder;
+import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.*;
 
 import java.util.HashMap;
@@ -60,9 +62,10 @@ public class GridCalculator {
         return counts;
     }
 
-    public SimpleFeatureType getResultFeatureType() {
+    public SimpleFeatureType getResultFeatureType(String crs) throws FactoryException {
         SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
         featureTypeBuilder.setName("gridcell");
+        featureTypeBuilder.setCRS(CRS.decode(crs));
         featureTypeBuilder.add("geometry", Polygon.class);
         featureTypeBuilder.add("value", Double.class);
         return featureTypeBuilder.buildFeatureType();

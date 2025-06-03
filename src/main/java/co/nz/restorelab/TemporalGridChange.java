@@ -10,6 +10,7 @@ import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
+import org.geotools.api.referencing.FactoryException;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.factory.CommonFactoryFinder;
@@ -38,7 +39,8 @@ public class TemporalGridChange implements GeoServerProcess {
             @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime1,
             @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime1,
             @DescribeParameter(name = "startTime2", description = "Starting Date Time for time period 2") String startTime2,
-            @DescribeParameter(name = "endTime2", description = "Ending Date Time for time period 2") String endTime2
+            @DescribeParameter(name = "endTime2", description = "Ending Date Time for time period 2") String endTime2,
+            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "CRS:3857") String crs
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
 
@@ -84,7 +86,13 @@ public class TemporalGridChange implements GeoServerProcess {
         Map<GridCell, Double> grid2 = gridCalculator.aggregate(range2);
 
         List<SimpleFeature> results = new ArrayList<>();
-        SimpleFeatureType resultType = gridCalculator.getResultFeatureType();
+        SimpleFeatureType resultType;
+        try {
+            resultType = gridCalculator.getResultFeatureType(crs);
+        } catch (FactoryException e) {
+            throw new ProcessException("Error decoding CRS value");
+        }
+
         SimpleFeatureBuilder builder = new SimpleFeatureBuilder(resultType);
         int fid = 0;
 

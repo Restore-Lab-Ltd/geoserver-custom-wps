@@ -91,7 +91,7 @@ public class TemporalChangeGridProcessIntegrationTest {
         String start2 = "2025-02-01T00:00:00";
         String end2 = "2025-02-05T00:00:00";
 
-        SimpleFeatureCollection result = process.execute(start1, end1, start2, end2);
+        SimpleFeatureCollection result = process.execute(start1, end1, start2, end2, "EPSG:3857");
         System.out.println(result);
     }
 }
