@@ -82,8 +82,8 @@ public class TemporalGridChange implements GeoServerProcess {
         }
 
         GridCalculator gridCalculator = new GridCalculator(5000);
-        Map<GridCell, Double> grid1 = gridCalculator.aggregate(range1);
-        Map<GridCell, Double> grid2 = gridCalculator.aggregate(range2);
+        List<GridCell> grid1 = gridCalculator.aggregate(range1);
+        List<GridCell> grid2 = gridCalculator.aggregate(range2);
 
         List<SimpleFeature> results = new ArrayList<>();
         SimpleFeatureType resultType;
@@ -96,10 +96,10 @@ public class TemporalGridChange implements GeoServerProcess {
         SimpleFeatureBuilder builder = new SimpleFeatureBuilder(resultType);
         int fid = 0;
 
-        for (GridCell cell: grid1.keySet()) {
-            double val1 = grid1.getOrDefault(cell, 0.0);
-            double val2 = grid2.getOrDefault(cell, 0.0);
-            double change = val1-val2;
+        for (GridCell cell: grid1) {
+            float val1 = cell.average();
+            float val2 = grid2.get(grid2.indexOf(cell)).average();
+            float change = val2-val1;
             builder.add(cell.getPolygon());
             builder.add(change);
             results.add(builder.buildFeature(String.valueOf(fid++)));

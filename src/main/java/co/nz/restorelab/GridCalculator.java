@@ -10,8 +10,7 @@ import org.geotools.geometry.jts.JTSFactoryFinder;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class GridCalculator {
     private final double cellSize;
@@ -24,14 +23,14 @@ public class GridCalculator {
         this.geometryFactory = JTSFactoryFinder.getGeometryFactory();
     }
 
-    public Map<GridCell, Double> aggregate(SimpleFeatureCollection features) {
+    public List<GridCell> aggregate(SimpleFeatureCollection features) {
         double minX = gridEnvelope.getMinX();
         double maxX = gridEnvelope.getMaxX();
         double minY = gridEnvelope.getMinY();
         double maxY = gridEnvelope.getMaxY();
 
 
-        Map<GridCell, Double> counts = new HashMap<>();
+        List<GridCell> counts = new ArrayList<>();
 
         try (SimpleFeatureIterator featureIterator = features.features()) {
             while (featureIterator.hasNext()) {
@@ -52,8 +51,11 @@ public class GridCalculator {
                         Polygon cellPolygon = createCell(cellMinX, cellMinY, cellSize);
 
                         if (geom.intersects(cellPolygon)) {
-                            GridCell cell = new GridCell(col, row, cellPolygon);
-                            counts.put(cell, counts.getOrDefault(cell, 0.0) + 1.0);
+                            GridCell cell = new GridCell(col, row, cellPolygon, (Float) feature.getAttribute("smc_mat"));
+                            if (counts.contains(cell)) {
+                                cell.addAllValues(counts.get(counts.indexOf(cell)).getValues());
+                            }
+                            counts.add(cell);
                         }
                     }
                 }
