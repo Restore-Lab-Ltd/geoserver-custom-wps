@@ -54,6 +54,7 @@ public class GridCalculator {
                             GridCell cell = new GridCell(col, row, cellPolygon, (Float) feature.getAttribute("smc_mat"));
                             if (counts.contains(cell)) {
                                 cell.addAllValues(counts.get(counts.indexOf(cell)).getValues());
+                                counts.remove(cell);
                             }
                             counts.add(cell);
                         }
@@ -69,7 +70,7 @@ public class GridCalculator {
         featureTypeBuilder.setName("gridcell");
         featureTypeBuilder.setCRS(CRS.decode(crs));
         featureTypeBuilder.add("geometry", Polygon.class);
-        featureTypeBuilder.add("value", Double.class);
+        featureTypeBuilder.add("value", Float.class);
         return featureTypeBuilder.buildFeatureType();
     }
 

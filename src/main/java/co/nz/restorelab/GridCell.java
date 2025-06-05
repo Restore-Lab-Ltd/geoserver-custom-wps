@@ -21,7 +21,7 @@ public class GridCell {
     }
 
     public float average() {
-        return values.stream().reduce(Float::sum).orElse(0f);
+        return values.stream().reduce(Float::sum).orElse(0f) / values.size();
     }
 
     public void addAllValues(List<Float> oldValues) {
@@ -46,5 +46,10 @@ public class GridCell {
     @Override
     public int hashCode() {
         return Objects.hash(row, col);
+    }
+
+    @Override
+    public String toString() {
+        return "GridCell[col=" + col + ", row="+row+", polygon="+polygon+", value="+values;
     }
 }
