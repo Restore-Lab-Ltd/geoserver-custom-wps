@@ -51,7 +51,7 @@ public class GridCalculator {
                         Polygon cellPolygon = createCell(cellMinX, cellMinY, cellSize);
 
                         if (geom.intersects(cellPolygon)) {
-                            GridCell cell = new GridCell(col, row, cellPolygon, (Float) feature.getAttribute("smc_mat"));
+                            GridCell cell = new GridCell(col, row, cellPolygon, (float) feature.getAttribute("smc_mat"));
                             if (counts.contains(cell)) {
                                 cell.addAllValues(counts.get(counts.indexOf(cell)).getValues());
                                 counts.remove(cell);

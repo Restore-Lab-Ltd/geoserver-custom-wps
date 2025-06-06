@@ -113,7 +113,7 @@ public class TemporalChangeGridProcessIntegrationTest {
                 float dateRange1Avg = dateRange1Data.stream().reduce(Float::sum).orElse(0f) / dateRange1Data.size();
                 float dateRange2Avg = dateRange2Data.stream().reduce(Float::sum).orElse(0f) / dateRange2Data.size();
                 float expectedValue = dateRange2Avg - dateRange1Avg;
-                assertEquals(expectedValue, feature.getProperty("value").getValue());
+                assertEquals(expectedValue, (float) feature.getProperty("value").getValue(), 0.001f);
             }
         }
     }
@@ -126,5 +126,31 @@ public class TemporalChangeGridProcessIntegrationTest {
         ProcessException exception = assertThrows(ProcessException.class,() -> process.execute(start1, end1, start2, end2, "EPSG:3857"));
 
         assertEquals("Error parsing date", exception.getMessage());
+    }
+
+    @Test public void testEndBehindStart() {
+        String start1 = "2025-01-01T00:00:00";
+        String end1 = "2025-01-05T00:00:00";
+        String start2 = "2025-02-01T00:00:00";
+        String end2 = "2025-02-05T00:00:00";
+
+        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(end1,start1,start2,end2,"EPSG:3857"));
+        ProcessException exception1 = assertThrows(ProcessException.class, () -> process.execute(start1,end1,end2,start2,"EPSG:3857"));
+
+        assertEquals("Start date is after end date for date range 1", exception.getMessage());
+        assertEquals("Start date is after end date for date range 2", exception1.getMessage());
+    }
+
+    @Test public void testEqualStartAndEnd() {
+        String start1 = "2025-01-01T00:00:00";
+        String end1 = "2025-01-05T00:00:00";
+        String start2 = "2025-02-01T00:00:00";
+        String end2 = "2025-02-05T00:00:00";
+
+        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(start1,start1,start2,end2,"EPSG:3857"));
+        ProcessException exception1 = assertThrows(ProcessException.class, () -> process.execute(start1,end1,start2,start2,"EPSG:3857"));
+
+        assertEquals("Start date is equal to end date for date range 1", exception.getMessage());
+        assertEquals("Start date is equal to end date for date range 2", exception1.getMessage());
     }
 }

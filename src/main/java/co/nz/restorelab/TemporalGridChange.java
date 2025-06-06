@@ -67,6 +67,20 @@ public class TemporalGridChange implements GeoServerProcess {
             throw new ProcessException("Error parsing date", e);
         }
 
+        if (startDate1.after(endDate1)) {
+            throw new ProcessException("Start date is after end date for date range 1");
+        }
+        if (startDate2.after(endDate2)) {
+            throw new ProcessException("Start date is after end date for date range 2");
+        }
+
+        if (startDate1.compareTo(endDate1) == 0) {
+            throw new ProcessException("Start date is equal to end date for date range 1");
+        }
+        if (startDate2.compareTo(endDate2) == 0) {
+            throw new ProcessException("Start date is equal to end date for date range 2");
+        }
+
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttr = filterFactory.property("utc_time");
         Filter timeFilter1 = filterFactory.between(timeAttr, filterFactory.literal(startDate1), filterFactory.literal(endDate1));
