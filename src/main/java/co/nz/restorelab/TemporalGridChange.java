@@ -111,7 +111,12 @@ public class TemporalGridChange implements GeoServerProcess {
 
         for (GridCell cell: grid1) {
             float val1 = cell.average();
-            float val2 = grid2.get(grid2.indexOf(cell)).average();
+            float val2;
+            if (!grid2.contains(cell)) {
+                val2 = 0;
+            } else {
+                val2 = grid2.get(grid2.indexOf(cell)).average();
+            }
             float change = val2-val1;
             builder.add(cell.getPolygon());
             builder.add(change);
