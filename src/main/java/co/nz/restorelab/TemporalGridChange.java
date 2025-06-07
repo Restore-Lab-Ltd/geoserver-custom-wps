@@ -39,7 +39,7 @@ public class TemporalGridChange implements GeoServerProcess {
             @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime1,
             @DescribeParameter(name = "startTime2", description = "Starting Date Time for time period 2") String startTime2,
             @DescribeParameter(name = "endTime2", description = "Ending Date Time for time period 2") String endTime2,
-            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "CRS:3857") String crs
+            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
 
