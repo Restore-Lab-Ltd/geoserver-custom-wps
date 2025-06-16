@@ -42,8 +42,8 @@ public class TemporalChangeGridProcessIntegrationTest {
 
     float smcMax = 100f;
 
-    List<Float> dateRange1Data = new ArrayList<>();
-    List<Float> dateRange2Data = new ArrayList<>();
+    List<Double> dateRange1Data = new ArrayList<>();
+    List<Double> dateRange2Data = new ArrayList<>();
 
     @BeforeEach
     public void init() throws Exception {
@@ -53,7 +53,7 @@ public class TemporalChangeGridProcessIntegrationTest {
         tb.setName("testing");
         tb.add("geometry", Point.class);
         tb.add("utc_time", Date.class);
-        tb.add("smc_mat", Float.class);
+        tb.add("smc_mat", Double.class);
         SimpleFeatureType featureType = tb.buildFeatureType();
 
         gf = new GeometryFactory();
@@ -66,14 +66,14 @@ public class TemporalChangeGridProcessIntegrationTest {
         for (int i = 0; i < featureCount; i++) {
             Point p = gf.createPoint(new Coordinate((i * 0.001) + 170, -45));
             // Date range 1 data
-            float smcMat = random.nextFloat() * smcMax;
+            double smcMat = random.nextDouble() * smcMax;
             dateRange1Data.add(smcMat);
             featureBuilder.set("geometry", p);
             featureBuilder.set("utc_time", null);
             featureBuilder.set("smc_mat", smcMat);
             dateRange1.add(featureBuilder.buildFeature("fid" + i));
             // date range 2 data
-            smcMat = random.nextFloat() * smcMax;
+            smcMat = random.nextDouble() * smcMax;
             dateRange2Data.add(smcMat);
             featureBuilder.set("geometry", p);
             featureBuilder.set("utc_time", null);
@@ -110,10 +110,10 @@ public class TemporalChangeGridProcessIntegrationTest {
         try (SimpleFeatureIterator iterator = result.features()) {
             while (iterator.hasNext()) {
                 Feature feature = iterator.next();
-                float dateRange1Avg = dateRange1Data.stream().reduce(Float::sum).orElse(0f) / dateRange1Data.size();
-                float dateRange2Avg = dateRange2Data.stream().reduce(Float::sum).orElse(0f) / dateRange2Data.size();
-                float expectedValue = dateRange2Avg - dateRange1Avg;
-                assertEquals(expectedValue, (float) feature.getProperty("value").getValue(), 0.001f);
+                double dateRange1Avg = dateRange1Data.stream().reduce(Double::sum).orElse(0d) / dateRange1Data.size();
+                double dateRange2Avg = dateRange2Data.stream().reduce(Double::sum).orElse(0d) / dateRange2Data.size();
+                double expectedValue = dateRange2Avg - dateRange1Avg;
+                assertEquals(expectedValue, (double) feature.getProperty("value").getValue(), 0.001f);
             }
         }
     }

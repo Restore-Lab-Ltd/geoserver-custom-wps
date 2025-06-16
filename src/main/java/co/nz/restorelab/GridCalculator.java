@@ -51,7 +51,7 @@ public class GridCalculator {
                         Polygon cellPolygon = createCell(cellMinX, cellMinY, cellSize);
 
                         if (geom.intersects(cellPolygon)) {
-                            GridCell cell = new GridCell(col, row, cellPolygon, (float) feature.getAttribute("smc_mat"));
+                            GridCell cell = new GridCell(col, row, cellPolygon, (Double) feature.getAttribute("smc_mat"));
                             if (counts.contains(cell)) {
                                 cell.addAllValues(counts.get(counts.indexOf(cell)).getValues());
                                 counts.remove(cell);
@@ -70,7 +70,7 @@ public class GridCalculator {
         featureTypeBuilder.setName("gridcell");
         featureTypeBuilder.setCRS(CRS.decode(crs));
         featureTypeBuilder.add("geometry", Polygon.class);
-        featureTypeBuilder.add("value", Float.class);
+        featureTypeBuilder.add("value", Double.class);
         return featureTypeBuilder.buildFeatureType();
     }
 

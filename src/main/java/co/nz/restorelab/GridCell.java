@@ -11,24 +11,24 @@ public class GridCell {
     private final int row;
     private final int col;
     private final Polygon polygon;
-    private final List<Float> values = new ArrayList<>();
+    private final List<Double> values = new ArrayList<>();
 
-    public GridCell(int col, int row, Polygon polygon, float smc_value) {
+    public GridCell(int col, int row, Polygon polygon, double smc_value) {
         this.col = col;
         this.row = row;
         this.polygon = polygon;
         this.values.add(smc_value);
     }
 
-    public float average() {
-        return values.stream().reduce(Float::sum).orElse(0f) / values.size();
+    public double average() {
+        return values.stream().reduce(Double::sum).orElse(0.0) / values.size();
     }
 
-    public void addAllValues(List<Float> oldValues) {
+    public void addAllValues(List<Double> oldValues) {
         values.addAll(oldValues);
     }
 
-    public List<Float> getValues() {
+    public List<Double> getValues() {
         return values;
     }
 

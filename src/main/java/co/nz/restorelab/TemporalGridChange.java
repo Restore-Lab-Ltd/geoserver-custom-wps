@@ -110,14 +110,14 @@ public class TemporalGridChange implements GeoServerProcess {
         int fid = 0;
 
         for (GridCell cell: grid1) {
-            float val1 = cell.average();
-            float val2;
+            double val1 = cell.average();
+            double val2;
             if (!grid2.contains(cell)) {
                 val2 = 0;
             } else {
                 val2 = grid2.get(grid2.indexOf(cell)).average();
             }
-            float change = val2-val1;
+            double change = val2-val1;
             builder.add(cell.getPolygon());
             builder.add(change);
             results.add(builder.buildFeature(String.valueOf(fid++)));
