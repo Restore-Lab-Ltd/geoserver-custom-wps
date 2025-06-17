@@ -9,11 +9,8 @@ import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
-import org.geotools.api.geometry.Position;
-import org.geotools.api.parameter.ParameterValueGroup;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.MathTransform;
-import org.geotools.coverage.grid.GridCoordinates2D;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.coverage.grid.GridCoverageFactory;
 import org.geotools.coverage.grid.GridGeometry2D;
@@ -51,8 +48,8 @@ public class InundationBathtub implements GeoServerProcess {
     @DescribeResult(description = "The output from the bathtub model")
     public GridCoverage2D execute(
             @DescribeParameter(name = "startTime", description = "Starting Date Time for range") String startTime,
-            @DescribeParameter(name = "endTime", description = "Ending Date Time for range") String endTime,
-            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
+            @DescribeParameter(name = "endTime", description = "Ending Date Time for range") String endTime
+//            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
     ) throws ProcessException {
         try {
             LayerInfo layerInfo = catalog.getLayerByName("restore-lab:flooded_measurements");
@@ -115,8 +112,6 @@ public class InundationBathtub implements GeoServerProcess {
             double minLat = Double.POSITIVE_INFINITY, maxLat = Double.NEGATIVE_INFINITY;
             Deque<Point2D.Double> queue = new ArrayDeque<>();
 
-            GridGeometry2D gridGeometry = dem.getGridGeometry();
-
             try (SimpleFeatureIterator it = featureCollection.features()) {
                 while (it.hasNext()) {
                     SimpleFeature f = it.next();
@@ -131,10 +126,6 @@ public class InundationBathtub implements GeoServerProcess {
                     maxLat = Math.max(maxLat, lat);
 
                     queue.add(new Point2D.Double(lon, lat));
-
-//                    GridCoordinates gc = gridGeometry.worldToGrid(new Position2D(demCRS, lon, lat));
-//                    int col = gc.getCoordinateValue(0), row = gc.getCoordinateValue(1);
-//                    queue.add(new Point(col, row));
                 }
             }
 
@@ -147,8 +138,6 @@ public class InundationBathtub implements GeoServerProcess {
             );
             GridCoverage2D aoiDem = (GridCoverage2D) new Operations(null).crop(dem, aoiEnv);
 
-//            GridCoverage2D aoiDem = (GridCoverage2D) new Operations(null).crop(dem, aoiEnv);
-
             GridGeometry2D aoiGG = aoiDem.getGridGeometry();
             GridEnvelope aoiRange = aoiGG.getGridRange();
             int originX = aoiRange.getLow(0);
@@ -160,28 +149,6 @@ public class InundationBathtub implements GeoServerProcess {
             int h = renderedImage.getHeight();
 
             Raster demRaster = renderedImage.getData(new Rectangle(minX, minY, w, h));
-
-
-// FIX: get raster in local space (0,0)
-//            Raster demRaster = aoiDem.getRenderedImage().getData(new Rectangle(0, 0, w, h));
-
-//            RenderedImage renderedImage = aoiDem.getRenderedImage();
-//            Raster demRaster = renderedImage.getData();
-//            int w = aoiDem.getGridGeometry().getGridRange().getSpan(0);
-//            int h = aoiDem.getGridGeometry().getGridRange().getSpan(1);
-//            System.out.println(w + ", " + h);
-//cccccbcblncgncvdichtuhiehddlvkfbjrguunecnrju
-
-// … after you have your cropped coverage and its GridGeometry2D …
-//            GridGeometry2D aoiGG = aoiDem.getGridGeometry();
-//
-// get the grid‐range of the cropped coverage:
-//            GridEnvelope aoiRange = aoiGG.getGridRange();
-//            int originX = aoiRange.getLow(0);  // original DEM col of left edge
-//            int originY = aoiRange.getLow(1);  // original DEM row of top edge
-//
-//            int w = aoiRange.getSpan(0);
-//            int h = aoiRange.getSpan(1);
 
             Deque<Point> realQueue = new ArrayDeque<>();
             for (Point2D.Double worldPt : queue) {
@@ -266,45 +233,6 @@ public class InundationBathtub implements GeoServerProcess {
             }
             ImageIO.write(img, "png", new File("/tmp/flood-debug.png"));
 
-//            while (!realQueue.isEmpty()) {
-//                Point p = realQueue.pop();
-//                int x0 = p.x, y0 = p.y;
-////                if (x0 < 0 || x0 >= w || y0 < 0 || y0 >= h) continue;
-//                int idx0 = y0 * w + x0;
-//                if (mask.get(idx0)) continue;
-//                mask.set(idx0);
-//
-//                boolean cont = true;
-//                while (cont) {
-//                    double cur = demRaster.getSampleDouble(x0, y0, 0);
-//                    double maxDh = 0;
-//                    int bestDx = 0, bestDy = 0;
-//                    for (int dy = -1; dy <= 1; dy++) {
-//                        for (int dx = -1; dx <= 1; dx++) {
-//                            int nx = x0 + dx, ny = y0 + dy;
-////                            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-//                            int nidx = ny * w + nx;
-//                            if (mask.get(nidx)) continue;
-//                            double neighbours = demRaster.getSampleDouble(nx, ny, 0);
-//                            if (Double.isNaN(neighbours)) continue;
-//                            double dh = cur - neighbours;
-//                            if (dh > maxDh) {
-//                                maxDh = dh;
-//                                bestDx = dx;
-//                                bestDy = dy;
-//                            }
-//                        }
-//                    }
-//                    if (maxDh > 0) {
-//                        realQueue.add(new Point(x0 + bestDx, y0 + bestDy));
-//                        x0 += bestDx;
-//                        y0 += bestDy;
-//                    } else {
-//                        cont = false;
-//                    }
-//                }
-//            }
-
             SampleModel sm = new MultiPixelPackedSampleModel(
                     DataBuffer.TYPE_BYTE,
                     w,
@@ -339,6 +267,5 @@ public class InundationBathtub implements GeoServerProcess {
             System.out.println(Arrays.toString(e.getStackTrace()));
         }
         return null;
-//        return new DefaultFeatureCollection();
     }
 }
