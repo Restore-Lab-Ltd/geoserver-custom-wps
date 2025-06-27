@@ -3,9 +3,13 @@ package co.nz.restorelab;
 import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.api.referencing.operation.MathTransform;
+import org.geotools.api.referencing.operation.NoninvertibleTransformException;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
+import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.JTSFactoryFinder;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.*;
@@ -15,20 +19,22 @@ import java.util.*;
 public class GridCalculator {
     private final double cellSize;
     private final GeometryFactory geometryFactory;
-    private final Envelope gridEnvelope;
+    private final MathTransform transform;
+    private final MathTransform inverseTransform;
 
-    public GridCalculator(double cellSize) {
+    public GridCalculator(double cellSize) throws FactoryException, NoninvertibleTransformException {
         this.cellSize = cellSize;
-        this.gridEnvelope = new Envelope(165.0, 180.0, -48.0, -33.0);
         this.geometryFactory = JTSFactoryFinder.getGeometryFactory();
+        CoordinateReferenceSystem sourceCRS = CRS.decode("EPSG:3857");
+        // Use NZTM (EPSG:2193) for the grid calculations
+        CoordinateReferenceSystem gridCRS = CRS.decode("EPSG:2193");
+        this.transform = CRS.findMathTransform(sourceCRS, gridCRS, true);
+        this.inverseTransform = transform.inverse();
     }
 
     public List<GridCell> aggregate(SimpleFeatureCollection features) {
-        double minX = gridEnvelope.getMinX();
-        double maxX = gridEnvelope.getMaxX();
-        double minY = gridEnvelope.getMinY();
-        double maxY = gridEnvelope.getMaxY();
-
+        double minX = 800000;   // western extent of NZ in NZTM
+        double minY = 4700000;  // southern extent of NZ in NZTM
 
         List<GridCell> counts = new ArrayList<>();
 
@@ -38,7 +44,10 @@ public class GridCalculator {
                 Geometry geom = (Geometry) feature.getDefaultGeometry();
                 if (geom == null) continue;
 
-                Envelope geomEnv = geom.getEnvelopeInternal();
+                // Transform from 3857 to NZTM
+                Geometry transformedGeom = JTS.transform(geom, transform);
+                Envelope geomEnv = transformedGeom.getEnvelopeInternal();
+
                 int colStart = (int) Math.floor((geomEnv.getMinX() - minX) / cellSize);
                 int colEnd = (int) Math.floor((geomEnv.getMaxX() - minX) / cellSize);
                 int rowStart = (int) Math.floor((geomEnv.getMinY() - minY) / cellSize);
@@ -61,14 +70,16 @@ public class GridCalculator {
                     }
                 }
             }
+        } catch (Exception e) {
+            throw new RuntimeException("Error processing features", e);
         }
         return counts;
     }
 
-    public SimpleFeatureType getResultFeatureType(String crs) throws FactoryException {
+    public SimpleFeatureType getResultFeatureType(String outputCrs) throws FactoryException {
         SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
         featureTypeBuilder.setName("gridcell");
-        featureTypeBuilder.setCRS(CRS.decode(crs));
+        featureTypeBuilder.setCRS(CRS.decode(outputCrs));
         featureTypeBuilder.add("geometry", Polygon.class);
         featureTypeBuilder.add("value", Double.class);
         return featureTypeBuilder.buildFeatureType();
@@ -83,6 +94,13 @@ public class GridCalculator {
                 new Coordinate(minX, minY),
         };
         LinearRing ring = geometryFactory.createLinearRing(coords);
-        return geometryFactory.createPolygon(ring);
+        Polygon poly = geometryFactory.createPolygon(ring);
+
+        try {
+            // Transform the cell back to the requested CRS
+            return (Polygon) JTS.transform(poly, inverseTransform);
+        } catch (Exception e) {
+            throw new RuntimeException("Error transforming grid cell", e);
+        }
     }
 }

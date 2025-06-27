@@ -38,10 +38,6 @@ public class TemporalChangeGridProcessIntegrationTest {
     SimpleFeatureTypeBuilder tb;
     GeometryFactory gf;
 
-    Random random = new Random();
-
-    float smcMax = 100f;
-
     List<Double> dateRange1Data = new ArrayList<>();
     List<Double> dateRange2Data = new ArrayList<>();
 
@@ -64,16 +60,20 @@ public class TemporalChangeGridProcessIntegrationTest {
 
         SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(featureType);
         for (int i = 0; i < featureCount; i++) {
-            Point p = gf.createPoint(new Coordinate((i * 0.001) + 170, -45));
+            Point p = gf.createPoint(new Coordinate(
+                19500000 + (i * 10000), // Spread points ~10km apart
+                -5000000 + (i * 10000)  // Spread points ~10km apart
+            ));
             // Date range 1 data
-            double smcMat = random.nextDouble() * smcMax;
+            double smcMat = 50.0;
             dateRange1Data.add(smcMat);
             featureBuilder.set("geometry", p);
             featureBuilder.set("utc_time", null);
             featureBuilder.set("smc_mat", smcMat);
             dateRange1.add(featureBuilder.buildFeature("fid" + i));
-            // date range 2 data
-            smcMat = random.nextDouble() * smcMax;
+
+            // Data range 2
+            smcMat = 60.0;
             dateRange2Data.add(smcMat);
             featureBuilder.set("geometry", p);
             featureBuilder.set("utc_time", null);
@@ -96,8 +96,7 @@ public class TemporalChangeGridProcessIntegrationTest {
     }
 
     @Test
-    public void testExecuteComputesCorrectChange() throws Exception {
-
+    public void testExecuteComputesCorrectChange() {
         String start1 = "2025-01-01T00:00:00";
         String end1 = "2025-01-05T00:00:00";
         String start2 = "2025-02-01T00:00:00";
@@ -105,15 +104,13 @@ public class TemporalChangeGridProcessIntegrationTest {
 
         SimpleFeatureCollection result = process.execute(start1, end1, start2, end2, "EPSG:3857");
 
-        assertEquals(1, result.size());
+        assertEquals(10, result.size());
 
         try (SimpleFeatureIterator iterator = result.features()) {
             while (iterator.hasNext()) {
                 Feature feature = iterator.next();
-                double dateRange1Avg = dateRange1Data.stream().reduce(Double::sum).orElse(0d) / dateRange1Data.size();
-                double dateRange2Avg = dateRange2Data.stream().reduce(Double::sum).orElse(0d) / dateRange2Data.size();
-                double expectedValue = dateRange2Avg - dateRange1Avg;
-                assertEquals(expectedValue, (double) feature.getProperty("value").getValue(), 0.001f);
+                // We expect a consistent 10.0 difference (60.0 - 50.0)
+                assertEquals(10.0, (double) feature.getProperty("value").getValue(), 0.001f);
             }
         }
     }

@@ -11,6 +11,7 @@ import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
 import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.operation.NoninvertibleTransformException;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.factory.CommonFactoryFinder;
@@ -93,8 +94,15 @@ public class TemporalGridChange implements GeoServerProcess {
         } catch (IOException e) {
             throw new ProcessException("Error getting features", e);
         }
+        GridCalculator gridCalculator;
+        try {
+            gridCalculator = new GridCalculator(5000);
+        } catch (FactoryException e) {
+            throw new ProcessException("Error decoding source or target CRS", e);
+        } catch (NoninvertibleTransformException e) {
+            throw new ProcessException("Error creating inverse crs transformer", e);
+        }
 
-        GridCalculator gridCalculator = new GridCalculator(5000);
         List<GridCell> grid1 = gridCalculator.aggregate(range1);
         List<GridCell> grid2 = gridCalculator.aggregate(range2);
 
