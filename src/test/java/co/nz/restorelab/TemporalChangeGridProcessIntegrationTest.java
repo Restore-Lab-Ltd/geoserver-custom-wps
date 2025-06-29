@@ -1,98 +1,24 @@
 package co.nz.restorelab;
 
-import org.geoserver.catalog.Catalog;
-import org.geoserver.catalog.FeatureTypeInfo;
-import org.geoserver.catalog.LayerInfo;
-import org.geotools.api.data.SimpleFeatureSource;
+import co.nz.restorelab.utils.MockSoilMoisture;
 import org.geotools.api.feature.Feature;
-import org.geotools.api.feature.simple.SimpleFeatureType;
-import org.geotools.api.filter.Filter;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.feature.DefaultFeatureCollection;
-import org.geotools.feature.simple.SimpleFeatureBuilder;
-import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.process.ProcessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
-
-import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class TemporalChangeGridProcessIntegrationTest {
 
-    Catalog mockCatalog;
-    LayerInfo mockLayer;
-    FeatureTypeInfo mockFeatureTypeInfo;
-    SimpleFeatureSource mockFeatureSource;
     TemporalGridChange process;
-
-    SimpleFeatureTypeBuilder tb;
-    GeometryFactory gf;
-
-    List<Double> dateRange1Data = new ArrayList<>();
-    List<Double> dateRange2Data = new ArrayList<>();
 
     @BeforeEach
     public void init() throws Exception {
-        dateRange1Data.clear();
-        dateRange2Data.clear();
-        tb = new SimpleFeatureTypeBuilder();
-        tb.setName("testing");
-        tb.add("geometry", Point.class);
-        tb.add("utc_time", Date.class);
-        tb.add("smc_mat", Double.class);
-        SimpleFeatureType featureType = tb.buildFeatureType();
-
-        gf = new GeometryFactory();
-        DefaultFeatureCollection dateRange1 = new DefaultFeatureCollection();
-        DefaultFeatureCollection dateRange2 = new DefaultFeatureCollection();
-
-        int featureCount = 10;
-
-        SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(featureType);
-        for (int i = 0; i < featureCount; i++) {
-            Point p = gf.createPoint(new Coordinate(
-                19500000 + (i * 10000), // Spread points ~10km apart
-                -5000000 + (i * 10000)  // Spread points ~10km apart
-            ));
-            // Date range 1 data
-            double smcMat = 50.0;
-            dateRange1Data.add(smcMat);
-            featureBuilder.set("geometry", p);
-            featureBuilder.set("utc_time", null);
-            featureBuilder.set("smc_mat", smcMat);
-            dateRange1.add(featureBuilder.buildFeature("fid" + i));
-
-            // Data range 2
-            smcMat = 60.0;
-            dateRange2Data.add(smcMat);
-            featureBuilder.set("geometry", p);
-            featureBuilder.set("utc_time", null);
-            featureBuilder.set("smc_mat", smcMat);
-            dateRange2.add(featureBuilder.buildFeature("fid" + i));
-        }
-
-        mockCatalog = mock(Catalog.class);
-        mockLayer = mock(LayerInfo.class);
-        mockFeatureTypeInfo = mock(FeatureTypeInfo.class);
-        mockFeatureSource = mock(SimpleFeatureSource.class);
-
-        when(mockCatalog.getFeatureTypeByName("restore-lab:smc_measurements")).thenReturn(mockFeatureTypeInfo);
-        when(mockCatalog.getLayerByName("restore-lab:smc_measurements")).thenReturn(mockLayer);
-        when(mockLayer.getResource()).thenReturn(mockFeatureTypeInfo);
-        when((SimpleFeatureSource) mockFeatureTypeInfo.getFeatureSource(null, null)).thenReturn(mockFeatureSource);
-        when(mockFeatureSource.getFeatures((Filter) any())).thenReturn(dateRange1, dateRange2);
-
-        process = new TemporalGridChange(mockCatalog);
+        MockSoilMoisture mock = new MockSoilMoisture(10);
+        process = new TemporalGridChange(mock.mockCatalog);
     }
 
     @Test
