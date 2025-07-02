@@ -23,10 +23,10 @@ public class TemporalChangeGridProcessIntegrationTest {
 
     @Test
     public void testExecuteComputesCorrectChange() {
-        String start1 = "2025-01-01T00:00:00";
-        String end1 = "2025-01-05T00:00:00";
+        String start1 = "2025-05-20T00:00:00";
+        String end1 = "2025-06-05T00:00:00";
 
-        SimpleFeatureCollection result = process.execute(start1, end1, "EPSG:3857");
+        SimpleFeatureCollection result = process.execute(start1, end1, 2024, "EPSG:3857");
 
         assertEquals(10, result.size());
 
@@ -34,7 +34,7 @@ public class TemporalChangeGridProcessIntegrationTest {
             while (iterator.hasNext()) {
                 Feature feature = iterator.next();
                 // We expect a consistent 10.0 difference (60.0 - 50.0)
-                assertEquals(10.0, (double) feature.getProperty("value").getValue(), 0.001f);
+                assertEquals(-10.0, (double) feature.getProperty("value").getValue(), 0.001f);
             }
         }
     }
@@ -42,7 +42,7 @@ public class TemporalChangeGridProcessIntegrationTest {
     @Test public void testInvalidDate() {
         String start1 = "2025-0100:00:00";
         String end1 = "2025-01-05T00:00:00";
-        ProcessException exception = assertThrows(ProcessException.class,() -> process.execute(start1, end1, "EPSG:3857"));
+        ProcessException exception = assertThrows(ProcessException.class,() -> process.execute(start1, end1, 2024, "EPSG:3857"));
 
         assertEquals("Error parsing date", exception.getMessage());
     }
@@ -51,21 +51,16 @@ public class TemporalChangeGridProcessIntegrationTest {
         String start1 = "2025-01-01T00:00:00";
         String end1 = "2025-01-05T00:00:00";
 
-        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(end1,start1,"EPSG:3857"));
-        ProcessException exception1 = assertThrows(ProcessException.class, () -> process.execute(start1,end1,"EPSG:3857"));
+        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(end1,start1, 2024,"EPSG:3857"));
 
         assertEquals("Start date is after end date for date range 1", exception.getMessage());
-        assertEquals("Start date is after end date for date range 2", exception1.getMessage());
     }
 
     @Test public void testEqualStartAndEnd() {
         String start1 = "2025-01-01T00:00:00";
-        String end1 = "2025-01-05T00:00:00";
 
-        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(start1,start1,"EPSG:3857"));
-        ProcessException exception1 = assertThrows(ProcessException.class, () -> process.execute(start1,end1,"EPSG:3857"));
+        ProcessException exception = assertThrows(ProcessException.class, () -> process.execute(start1,start1, 2024,"EPSG:3857"));
 
         assertEquals("Start date is equal to end date for date range 1", exception.getMessage());
-        assertEquals("Start date is equal to end date for date range 2", exception1.getMessage());
     }
 }

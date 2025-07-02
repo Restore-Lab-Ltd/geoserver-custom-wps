@@ -24,6 +24,7 @@ import org.geotools.process.factory.DescribeResult;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
@@ -38,6 +39,7 @@ public class TemporalGridChange implements GeoServerProcess {
     public SimpleFeatureCollection execute(
             @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime,
             @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime,
+            @DescribeParameter(name = "year", description = "Year to compare the time range to.") int year,
             @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
@@ -72,19 +74,45 @@ public class TemporalGridChange implements GeoServerProcess {
             throw new ProcessException("Start date is equal to end date for date range 1");
         }
 
+        Calendar calStart = Calendar.getInstance();
+        Calendar calEnd = Calendar.getInstance();
+
+        calStart.setTime(startDate);
+        calStart.set(Calendar.YEAR, year); // set to requested year to compare
+        int startDay = calStart.get(Calendar.DAY_OF_YEAR);
+        calEnd.setTime(endDate);
+        calEnd.set(Calendar.YEAR, year); // set to requested year to compare
+        int endDay = calEnd.get(Calendar.DAY_OF_YEAR);
+        int gridSize;
+        if (endDay-startDay > 7) {
+            gridSize = 800;
+            // Use mean for the month
+            calStart.set(Calendar.DAY_OF_MONTH, calStart.getActualMinimum(Calendar.DAY_OF_MONTH));
+            calEnd.set(Calendar.DAY_OF_MONTH, calEnd.getActualMaximum(Calendar.DAY_OF_MONTH));
+        } else {
+            gridSize = 2000;
+            // Use week means
+            calStart.set(Calendar.DAY_OF_WEEK, calStart.getFirstDayOfWeek());
+            calEnd.set(Calendar.DAY_OF_WEEK, 8);
+        }
+        Date compareStart = calStart.getTime();
+        Date compareEnd = calEnd.getTime();
+
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttr = filterFactory.property("utc_time");
         Filter timeFilter1 = filterFactory.between(timeAttr, filterFactory.literal(startDate), filterFactory.literal(endDate));
+        Filter timeFilter2 = filterFactory.between(timeAttr, filterFactory.literal(compareStart), filterFactory.literal(compareEnd));
 
-        SimpleFeatureCollection range1;
+        SimpleFeatureCollection range1, range2;
         try {
             range1 = featureSource.getFeatures(timeFilter1);
+            range2 = featureSource.getFeatures(timeFilter2);
         } catch (IOException e) {
             throw new ProcessException("Error getting features", e);
         }
         GridCalculator gridCalculator;
         try {
-            gridCalculator = new GridCalculator(5000);
+            gridCalculator = new GridCalculator(gridSize);
         } catch (FactoryException e) {
             throw new ProcessException("Error decoding source or target CRS", e);
         } catch (NoninvertibleTransformException e) {
@@ -92,6 +120,7 @@ public class TemporalGridChange implements GeoServerProcess {
         }
 
         List<GridCell> grid1 = gridCalculator.aggregate(range1);
+        List<GridCell> grid2 = gridCalculator.aggregate(range2);
 
         List<SimpleFeature> results = new ArrayList<>();
         SimpleFeatureType resultType;
@@ -106,8 +135,11 @@ public class TemporalGridChange implements GeoServerProcess {
 
         for (GridCell cell: grid1) {
             double val1 = cell.average();
-            double val2 = 0d;
-            double change = val2-val1;
+            double val2 = 0;
+            if (grid2.contains(cell)) {
+                val2 = grid2.get(grid2.indexOf(cell)).average();
+            }
+            double change = val1 - val2;
             builder.add(cell.getPolygon());
             builder.add(change);
             results.add(builder.buildFeature(String.valueOf(fid++)));

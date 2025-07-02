@@ -54,7 +54,7 @@ public class MockSoilMoisture {
             featureBuilder.set("smc_mat", smcMat);
             dateRange1.add(featureBuilder.buildFeature("fid"+i));
             // Data range 2
-            smcMat = 60.0;
+            smcMat = 60d;
 
             featureBuilder.set("geometry", p);
             featureBuilder.set("utc_time", null);
