@@ -36,10 +36,8 @@ public class TemporalGridChange implements GeoServerProcess {
     }
     @DescribeResult(description = "The gridded change between the two date ranges.")
     public SimpleFeatureCollection execute(
-            @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime1,
-            @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime1,
-            @DescribeParameter(name = "startTime2", description = "Starting Date Time for time period 2") String startTime2,
-            @DescribeParameter(name = "endTime2", description = "Ending Date Time for time period 2") String endTime2,
+            @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime,
+            @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime,
             @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
@@ -58,39 +56,29 @@ public class TemporalGridChange implements GeoServerProcess {
 
         // Convert the start and end times
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-        Date startDate1, endDate1, startDate2, endDate2;
+        Date startDate, endDate;
         try {
-            startDate1 = sdf.parse(startTime1);
-            endDate1 = sdf.parse(endTime1);
-            startDate2 = sdf.parse(startTime2);
-            endDate2 = sdf.parse(endTime2);
+            startDate = sdf.parse(startTime);
+            endDate = sdf.parse(endTime);
         } catch (Exception e) {
             throw new ProcessException("Error parsing date", e);
         }
 
-        if (startDate1.after(endDate1)) {
+        if (startDate.after(endDate)) {
             throw new ProcessException("Start date is after end date for date range 1");
         }
-        if (startDate2.after(endDate2)) {
-            throw new ProcessException("Start date is after end date for date range 2");
-        }
 
-        if (startDate1.compareTo(endDate1) == 0) {
+        if (startDate.compareTo(endDate) == 0) {
             throw new ProcessException("Start date is equal to end date for date range 1");
-        }
-        if (startDate2.compareTo(endDate2) == 0) {
-            throw new ProcessException("Start date is equal to end date for date range 2");
         }
 
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttr = filterFactory.property("utc_time");
-        Filter timeFilter1 = filterFactory.between(timeAttr, filterFactory.literal(startDate1), filterFactory.literal(endDate1));
-        Filter timeFilter2 = filterFactory.between(timeAttr, filterFactory.literal(startDate2), filterFactory.literal(endDate2));
+        Filter timeFilter1 = filterFactory.between(timeAttr, filterFactory.literal(startDate), filterFactory.literal(endDate));
 
-        SimpleFeatureCollection range1, range2;
+        SimpleFeatureCollection range1;
         try {
             range1 = featureSource.getFeatures(timeFilter1);
-            range2 = featureSource.getFeatures(timeFilter2);
         } catch (IOException e) {
             throw new ProcessException("Error getting features", e);
         }
@@ -104,7 +92,6 @@ public class TemporalGridChange implements GeoServerProcess {
         }
 
         List<GridCell> grid1 = gridCalculator.aggregate(range1);
-        List<GridCell> grid2 = gridCalculator.aggregate(range2);
 
         List<SimpleFeature> results = new ArrayList<>();
         SimpleFeatureType resultType;
@@ -119,12 +106,7 @@ public class TemporalGridChange implements GeoServerProcess {
 
         for (GridCell cell: grid1) {
             double val1 = cell.average();
-            double val2;
-            if (!grid2.contains(cell)) {
-                val2 = 0;
-            } else {
-                val2 = grid2.get(grid2.indexOf(cell)).average();
-            }
+            double val2 = 0d;
             double change = val2-val1;
             builder.add(cell.getPolygon());
             builder.add(change);
