@@ -3,4 +3,5 @@
 <beans>
     <bean id="temporalGridChange" class="co.nz.restorelab.TemporalGridChange"/>
     <bean id="inundationBathtub" class="co.nz.restorelab.InundationBathtub"/>
+    <bean id="calculateYearlyChange" class="co.nz.restorelab.CalculateYearlyMean"/>
 </beans>
