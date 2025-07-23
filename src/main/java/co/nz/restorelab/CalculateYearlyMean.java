@@ -1,6 +1,5 @@
 package co.nz.restorelab;
 
-import com.sun.media.jai.opimage.FFT;
 import org.geoserver.catalog.*;
 import org.geoserver.wps.gs.GeoServerProcess;
 import org.geotools.api.data.*;
@@ -10,22 +9,25 @@ import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
 import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
+import org.geotools.api.referencing.operation.TransformException;
 import org.geotools.data.DefaultTransaction;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.factory.CommonFactoryFinder;
 import org.geotools.feature.DefaultFeatureCollection;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.process.ProcessException;
 import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
+import org.geotools.referencing.CRS;
 
 import java.io.IOException;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.GregorianCalendar;
 import java.util.List;
 
 @DescribeProcess(title = "CalculateYearlyMean", description = "Calculates the yearly mean for a given year")
@@ -100,15 +102,15 @@ public class CalculateYearlyMean implements GeoServerProcess {
         }
 
         SimpleFeatureType featureType;
-        try {
-            featureType = gridCalculator.getResultFeatureType("EPSG:3857");
-        } catch (FactoryException e) {
-            throw new ProcessException("");
-        }
 
         DataStore dataStore = (DataStore) dataAccess;
 
         String typeName = "yearly_mean_smc_" + year;
+        try {
+            featureType = gridCalculator.getResultFeatureType("EPSG:3857", typeName);
+        } catch (FactoryException e) {
+            throw new ProcessException("");
+        }
 
         // Make the simple feature collection
         DefaultFeatureCollection collection = new DefaultFeatureCollection();
@@ -147,6 +149,16 @@ public class CalculateYearlyMean implements GeoServerProcess {
         ftiNew.setStore(storeInfo);
         ftiNew.setEnabled(true);
         ftiNew.setNamespace(catalog.getNamespaceByPrefix("restore-lab"));
+        ftiNew.setSRS("EPSG:3857");
+        ftiNew.setNativeBoundingBox(collection.getBounds());
+        try {
+            CoordinateReferenceSystem crs = CRS.decode("EPSG:3857");
+            ftiNew.setNativeCRS(crs);
+            ReferencedEnvelope latLonBounds = collection.getBounds().transform(crs, true);
+            ftiNew.setLatLonBoundingBox(latLonBounds);
+        } catch (FactoryException | TransformException e) {
+            throw new ProcessException("Error decoding EPSG to set native");
+        }
 
         catalog.add(ftiNew);
 
@@ -154,6 +166,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
         newLayer.setResource(ftiNew);
         newLayer.setEnabled(true);
         newLayer.setName(typeName);
+        newLayer.setDefaultStyle(catalog.getStyleByName("Soil Moisture"));
 
         catalog.add(newLayer);
 

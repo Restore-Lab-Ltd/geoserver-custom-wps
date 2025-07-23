@@ -125,7 +125,7 @@ public class TemporalGridChange implements GeoServerProcess {
         List<SimpleFeature> results = new ArrayList<>();
         SimpleFeatureType resultType;
         try {
-            resultType = gridCalculator.getResultFeatureType(crs);
+            resultType = gridCalculator.getResultFeatureType(crs, "gridcells");
         } catch (FactoryException e) {
             throw new ProcessException("Error decoding CRS value");
         }

@@ -8,8 +8,6 @@ import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.feature.DefaultFeatureCollection;
-import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.JTSFactoryFinder;
@@ -78,12 +76,12 @@ public class GridCalculator {
         return counts;
     }
 
-    public SimpleFeatureType getResultFeatureType(String outputCrs) throws FactoryException {
+    public SimpleFeatureType getResultFeatureType(String outputCrs, String name) throws FactoryException {
         SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
-        featureTypeBuilder.setName("gridcell");
+        featureTypeBuilder.setName(name);
         featureTypeBuilder.setCRS(CRS.decode(outputCrs));
         featureTypeBuilder.add("geometry", Polygon.class);
-        featureTypeBuilder.add("value", Double.class);
+        featureTypeBuilder.add("smc_mat", Double.class);
         return featureTypeBuilder.buildFeatureType();
     }
 

@@ -34,7 +34,7 @@ public class TemporalChangeGridProcessIntegrationTest {
             while (iterator.hasNext()) {
                 Feature feature = iterator.next();
                 // We expect a consistent 10.0 difference (60.0 - 50.0)
-                assertEquals(-10.0, (double) feature.getProperty("value").getValue(), 0.001f);
+                assertEquals(-10.0, (double) feature.getProperty("smc_mat").getValue(), 0.001f);
             }
         }
     }
