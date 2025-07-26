@@ -12,6 +12,7 @@ import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
 import org.geotools.api.referencing.operation.TransformException;
+import org.geotools.api.util.ProgressListener;
 import org.geotools.data.DefaultTransaction;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
@@ -30,7 +31,10 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
-@DescribeProcess(title = "CalculateYearlyMean", description = "Calculates the yearly mean for a given year")
+@DescribeProcess(
+        title = "CalculateYearlyMean",
+        description = "Calculates the yearly mean for a given year"
+)
 public class CalculateYearlyMean implements GeoServerProcess {
     Catalog catalog;
     CalculateYearlyMean(Catalog catalog) {
@@ -39,7 +43,8 @@ public class CalculateYearlyMean implements GeoServerProcess {
 
     @DescribeResult(name = "result", description = "Returns the layer name that was created")
     public String execute(
-            @DescribeParameter(name = "year", description = "Year to calculate") int year
+            @DescribeParameter(name = "year", description = "Year to calculate") int year,
+            ProgressListener listener
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
 
@@ -91,7 +96,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
             throw new ProcessException("Error creating inverse crs transformer", e);
         }
 
-        List<GridCell> grid = gridCalculator.aggregate(range);
+        List<GridCell> grid = gridCalculator.aggregate(range, listener);
         WorkspaceInfo ws = catalog.getWorkspaceByName("restore-lab");
         DataStoreInfo storeInfo = catalog.getDefaultDataStore(ws);
         DataAccess<?, ?> dataAccess;
@@ -122,8 +127,11 @@ public class CalculateYearlyMean implements GeoServerProcess {
             builder.add(cell.average());
             SimpleFeature feature = builder.buildFeature("fid-"+fid++);
             collection.add(feature);
+            float progress = 0.33f + 0.33f * (float) fid / grid.size();
+            listener.progress(progress);
         }
 
+        fid = 0;
         try {
             dataStore.createSchema(featureType);
             Transaction transaction = new DefaultTransaction("create");
@@ -135,6 +143,9 @@ public class CalculateYearlyMean implements GeoServerProcess {
                        SimpleFeature newFeature = writer.next();
                        newFeature.setAttributes(feature.getAttributes());
                        writer.write();
+
+                       float progress = 0.66f + 0.33f * (float) fid / grid.size();
+                       listener.progress(progress);
                    }
                 }
             }
@@ -169,6 +180,8 @@ public class CalculateYearlyMean implements GeoServerProcess {
         newLayer.setDefaultStyle(catalog.getStyleByName("Soil Moisture"));
 
         catalog.add(newLayer);
+
+        listener.complete();
 
         return "Layer created: restore-lab:" + typeName;
     }

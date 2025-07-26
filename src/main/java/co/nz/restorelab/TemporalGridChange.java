@@ -12,6 +12,7 @@ import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
 import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
+import org.geotools.api.util.ProgressListener;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.factory.CommonFactoryFinder;
@@ -40,7 +41,8 @@ public class TemporalGridChange implements GeoServerProcess {
             @DescribeParameter(name = "startTime1", description = "Starting Date Time for time period 1") String startTime,
             @DescribeParameter(name = "endTime1", description = "Ending Date Time for time period 1") String endTime,
             @DescribeParameter(name = "year", description = "Year to compare the time range to.") int year,
-            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs
+            @DescribeParameter(name = "outputCRS", description = "Change the default CRS to output", defaultValue = "EPSG:3857") String crs,
+            ProgressListener listener
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
 
@@ -119,8 +121,8 @@ public class TemporalGridChange implements GeoServerProcess {
             throw new ProcessException("Error creating inverse crs transformer", e);
         }
 
-        List<GridCell> grid1 = gridCalculator.aggregate(range1);
-        List<GridCell> grid2 = gridCalculator.aggregate(range2);
+        List<GridCell> grid1 = gridCalculator.aggregate(range1, listener);
+        List<GridCell> grid2 = gridCalculator.aggregate(range2, listener);
 
         List<SimpleFeature> results = new ArrayList<>();
         SimpleFeatureType resultType;

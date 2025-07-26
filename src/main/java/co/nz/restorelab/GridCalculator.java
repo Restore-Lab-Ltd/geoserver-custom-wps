@@ -6,6 +6,7 @@ import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
+import org.geotools.api.util.ProgressListener;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
@@ -32,7 +33,7 @@ public class GridCalculator {
         this.inverseTransform = transform.inverse();
     }
 
-    public List<GridCell> aggregate(SimpleFeatureCollection features) {
+    public List<GridCell> aggregate(SimpleFeatureCollection features, ProgressListener listener) {
         double minX = 800000;   // western extent of NZ in NZTM
         double minY = 4700000;  // southern extent of NZ in NZTM
 
@@ -67,6 +68,8 @@ public class GridCalculator {
                             }
                             counts.add(cell);
                         }
+                        float progress = 0.33f * (float) (col+row) / colEnd + rowEnd;
+                        listener.progress(progress);
                     }
                 }
             }

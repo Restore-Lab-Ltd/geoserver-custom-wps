@@ -5,6 +5,7 @@ import org.geoserver.catalog.FeatureTypeInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geotools.api.data.SimpleFeatureSource;
 import org.geotools.api.feature.simple.SimpleFeatureType;
+import org.geotools.api.util.ProgressListener;
 import org.geotools.feature.DefaultFeatureCollection;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.any;
 
 public class MockSoilMoisture {
     public Catalog mockCatalog;
+    public ProgressListener mockProgressListener;
     LayerInfo mockLayer;
     FeatureTypeInfo mockFeatureType;
     SimpleFeatureSource mockFeatureSource;
@@ -65,6 +67,7 @@ public class MockSoilMoisture {
         mockLayer = mock(LayerInfo.class);
         mockFeatureType = mock(FeatureTypeInfo.class);
         mockFeatureSource = mock(SimpleFeatureSource.class);
+        mockProgressListener = mock(ProgressListener.class);
 
         when(mockCatalog.getLayerByName("restore-lab:smc_measurements")).thenReturn(mockLayer);
         when(mockLayer.getResource()).thenReturn(mockFeatureType);
