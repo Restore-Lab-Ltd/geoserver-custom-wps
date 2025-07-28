@@ -159,6 +159,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
         ftiNew.setNativeName(typeName);
         ftiNew.setStore(storeInfo);
         ftiNew.setEnabled(true);
+        ftiNew.getMetadata().put("srsHandling", "FORCE_DECLARED");
         ftiNew.setNamespace(catalog.getNamespaceByPrefix("restore-lab"));
         ftiNew.setSRS("EPSG:3857");
         ftiNew.setNativeBoundingBox(collection.getBounds());
