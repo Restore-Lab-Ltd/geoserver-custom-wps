@@ -79,7 +79,7 @@ public class GridCalculator {
         return counts;
     }
 
-    public SimpleFeatureType getResultFeatureType(String outputCrs, String name) throws FactoryException {
+    public static SimpleFeatureType getResultFeatureType(String outputCrs, String name) throws FactoryException {
         SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
         featureTypeBuilder.setName(name);
         featureTypeBuilder.setCRS(CRS.decode(outputCrs));

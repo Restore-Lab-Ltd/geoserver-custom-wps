@@ -138,15 +138,15 @@ public class CalculateYearlyMean implements GeoServerProcess {
 
             try (FeatureWriter<SimpleFeatureType, SimpleFeature> writer = dataStore.getFeatureWriterAppend(typeName, transaction)) {
                 try (SimpleFeatureIterator features = collection.features()) {
-                   while (features.hasNext()) {
-                       SimpleFeature feature = features.next();
-                       SimpleFeature newFeature = writer.next();
-                       newFeature.setAttributes(feature.getAttributes());
-                       writer.write();
+                    while (features.hasNext()) {
+                        SimpleFeature feature = features.next();
+                        SimpleFeature newFeature = writer.next();
+                        newFeature.setAttributes(feature.getAttributes());
+                        writer.write();
 
-                       float progress = 0.66f + 0.33f * (float) fid / grid.size();
-                       listener.progress(progress);
-                   }
+                        float progress = 0.66f + 0.33f * (float) fid / grid.size();
+                        listener.progress(progress);
+                    }
                 }
             }
             transaction.commit();
