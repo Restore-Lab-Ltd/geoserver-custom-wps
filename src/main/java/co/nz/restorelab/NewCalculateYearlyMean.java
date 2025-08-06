@@ -19,9 +19,7 @@ import org.geotools.api.referencing.operation.TransformException;
 import org.geotools.api.util.ProgressListener;
 import org.geotools.data.DefaultTransaction;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.factory.CommonFactoryFinder;
-import org.geotools.feature.DefaultFeatureCollection;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.ReferencedEnvelope;
@@ -31,7 +29,6 @@ import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Polygon;
-import org.springframework.security.core.parameters.P;
 
 import java.io.IOException;
 import java.util.Calendar;
@@ -112,6 +109,7 @@ public class NewCalculateYearlyMean implements GeoServerProcess {
             try {
                 SimpleFeatureCollection range = meanLayer.getFeatures(timeFilterCheck);
                 if (!range.isEmpty()) {
+                    calendar.add(Calendar.MONTH, -1);
                     continue;
                 }
                 // Get features for month from layer
@@ -125,7 +123,6 @@ public class NewCalculateYearlyMean implements GeoServerProcess {
             List<GridCell> grid = gridCalculator.aggregate(smcRange, progressListener);
             // Make simple feature collection for writing
 
-            DefaultFeatureCollection collection = new DefaultFeatureCollection();
             SimpleFeatureBuilder builder;
             try {
                 builder = new SimpleFeatureBuilder(getLayerFeatureType());
@@ -154,6 +151,7 @@ public class NewCalculateYearlyMean implements GeoServerProcess {
             } catch (IOException e) {
                 throw new ProcessException("Error in getting dataStore to write to", e);
             }
+            calendar.add(Calendar.MONTH, -1);
         }
         return "Hey";
     }
