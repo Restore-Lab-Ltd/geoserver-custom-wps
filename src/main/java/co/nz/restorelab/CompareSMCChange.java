@@ -5,25 +5,30 @@ import org.geoserver.catalog.FeatureTypeInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geoserver.wps.gs.GeoServerProcess;
 import org.geotools.api.data.SimpleFeatureSource;
+import org.geotools.api.feature.simple.SimpleFeature;
+import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
 import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.operation.NoninvertibleTransformException;
+import org.geotools.api.util.ProgressListener;
+import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.store.EmptyFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.factory.CommonFactoryFinder;
+import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.process.ProcessException;
 import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
+import org.locationtech.jts.geom.Geometry;
 
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 @DescribeProcess(title = "compareSMCChange", description = "Computes the gridded change between a date range and the previous 12 months.")
 public class CompareSMCChange implements GeoServerProcess {
@@ -35,7 +40,8 @@ public class CompareSMCChange implements GeoServerProcess {
     @DescribeResult(description = "The gridded change between the date range and previous 12 months.")
     public SimpleFeatureCollection execute(
             @DescribeParameter(name = "startDate", description = "Starting date in format YYYY-MM-DDTHH:MM:SS") String startTime,
-            @DescribeParameter(name = "endDate", description = "Ending date in format YYYY-MM-DDTHH:MM:SS") String endTime
+            @DescribeParameter(name = "endDate", description = "Ending date in format YYYY-MM-DDTHH:MM:SS") String endTime,
+            ProgressListener progressListener
     ) throws ProcessException {
         // get and validate layers
         LayerInfo layerInfoSMC = catalog.getLayerByName("restore-lab:smc_measurements");
@@ -95,25 +101,76 @@ public class CompareSMCChange implements GeoServerProcess {
         }
         ReferencedEnvelope bounds = rangeSMC.getBounds();
         // get feature collection for mean layer limiting to the interested area
-        Filter bboxFilter = filterFactory.bbox(
-                "geometry",
-                bounds.getMinX(),
-                bounds.getMinY(),
-                bounds.getMaxX(),
-                bounds.getMaxY(),
-                bounds.getCoordinateReferenceSystem().getIdentifiers().iterator().next().toString()
-        );
-        SimpleFeatureCollection yearMean;
+
+        Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, endDate);
+        List<GridCell> grid = gridCalculator.aggregate(rangeSMC, progressListener);
+
+        SimpleFeatureType resultType;
         try {
-            yearMean = featureSourceMean.getFeatures(bboxFilter);
-        } catch (IOException e) {
-            throw new ProcessException("Error in filtering mean layer by smc layer bounds",e);
+            resultType = GridCalculator.getResultFeatureType("EPSG:3857", "gridcells");
+        } catch (FactoryException e) {
+            throw new ProcessException("Error decoding CRS value", e);
+        }
+        List<SimpleFeature> results = new ArrayList<>();
+        SimpleFeatureBuilder builder = new SimpleFeatureBuilder(resultType);
+        int fid = 0;
+        for (GridCell cell : grid) {
+            double val1 = cell.average();
+            Double mean = meanGridCellSet.stream()
+                    .filter(c->c.getPolygon().equals(cell.getPolygon()))
+                    .map(MeanGridCell::getAverage).findFirst().orElse(0d);
+            double change  = val1-mean;
+            builder.add(cell.getPolygon());
+            builder.add(change);
+            results.add(builder.buildFeature("fid-"+fid++));
         }
 
-        return yearMean;
+        return new ListFeatureCollection(resultType, results);
     }
 
-    private List<GridCell> calculateMean(SimpleFeatureSource featureSource) {
-        return null;
+    private Set<MeanGridCell> calculateMean(SimpleFeatureSource featureSource, Date endDate) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(endDate);
+
+        FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
+        Expression timeAttr = filterFactory.property("time");
+        Set<MeanGridCell> yearMeanSet = new HashSet<>();
+
+        for (int i=0; i < 12; i++) {
+            Date filterEnd = calendar.getTime();
+            calendar.set(Calendar.MONTH, -1);
+            Date filterStart = calendar.getTime();
+
+            Filter timeFilter = filterFactory.between(timeAttr, filterFactory.literal(filterStart), filterFactory.literal(filterEnd));
+            SimpleFeatureCollection meanRange;
+            try {
+                meanRange = featureSource.getFeatures(timeFilter);
+                if (meanRange.isEmpty()) continue;
+            } catch (IOException e) {
+                throw new ProcessException("Error in getting mean for month: " + filterEnd, e);
+            }
+
+            try (SimpleFeatureIterator iterator = meanRange.features()) {
+                while (iterator.hasNext()) {
+                    SimpleFeature f = iterator.next();
+                    Geometry poly = (Geometry) f.getAttribute("geometry");
+                    Double mean = (Double) f.getAttribute("smc_mat");
+                    Optional<MeanGridCell> gridCell = yearMeanSet.stream()
+                            .filter(c->c.getPolygon().equals(poly))
+                            .findFirst();
+                    if (gridCell.isPresent()) {
+                        MeanGridCell meanGridCell = gridCell.get();
+                        yearMeanSet.remove(meanGridCell);
+                        meanGridCell.addValue(mean);
+                        yearMeanSet.add(meanGridCell);
+                    } else {
+                        MeanGridCell meanGridCell = new MeanGridCell(poly, mean);
+                        yearMeanSet.add(meanGridCell);
+                    }
+                }
+            }
+        }
+
+        return yearMeanSet;
     }
 }
