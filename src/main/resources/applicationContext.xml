@@ -5,4 +5,5 @@
     <bean id="inundationBathtub" class="co.nz.restorelab.InundationBathtub"/>
     <bean id="calculateYearlyChange" class="co.nz.restorelab.CalculateYearlyMean"/>
     <bean id="calculateYearlyMeanNew" class="co.nz.restorelab.NewCalculateYearlyMean"/>
+    <bean id="compareSMCChange" class="co.nz.restorelab.CompareSMCChange"/>
 </beans>
