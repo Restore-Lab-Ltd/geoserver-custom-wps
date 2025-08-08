@@ -102,7 +102,7 @@ public class CompareSMCChange implements GeoServerProcess {
         ReferencedEnvelope bounds = rangeSMC.getBounds();
         // get feature collection for mean layer limiting to the interested area
 
-        Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, endDate);
+        Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, endDate, bounds);
         List<GridCell> grid = gridCalculator.aggregate(rangeSMC, progressListener);
 
         SimpleFeatureType resultType;
@@ -128,12 +128,22 @@ public class CompareSMCChange implements GeoServerProcess {
         return new ListFeatureCollection(resultType, results);
     }
 
-    private Set<MeanGridCell> calculateMean(SimpleFeatureSource featureSource, Date endDate) {
+    private Set<MeanGridCell> calculateMean(SimpleFeatureSource featureSource, Date endDate, ReferencedEnvelope bounds) {
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(endDate);
 
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttr = filterFactory.property("time");
+
+        // first filter by bounding box of time range data
+        Filter bboxFilter = filterFactory.bbox(
+                "geometry",
+                bounds.getMinX(),
+                bounds.getMinY(),
+                bounds.getMaxX(),
+                bounds.getMaxY(),
+                bounds.getCoordinateReferenceSystem().getIdentifiers().iterator().next().toString());
+
         Set<MeanGridCell> yearMeanSet = new HashSet<>();
 
         for (int i=0; i < 12; i++) {
@@ -142,9 +152,10 @@ public class CompareSMCChange implements GeoServerProcess {
             Date filterStart = calendar.getTime();
 
             Filter timeFilter = filterFactory.between(timeAttr, filterFactory.literal(filterStart), filterFactory.literal(filterEnd));
+            Filter combinedFilter = filterFactory.and(bboxFilter, timeFilter);
             SimpleFeatureCollection meanRange;
             try {
-                meanRange = featureSource.getFeatures(timeFilter);
+                meanRange = featureSource.getFeatures(combinedFilter);
                 if (meanRange.isEmpty()) continue;
             } catch (IOException e) {
                 throw new ProcessException("Error in getting mean for month: " + filterEnd, e);
