@@ -186,22 +186,25 @@ public class CompareSMCChange implements GeoServerProcess {
             int batchSize = 10000;
             int processed = 0;
             try (SimpleFeatureIterator iterator = meanRange.features()) {
-                SimpleFeature f = iterator.next();
-                Geometry poly = (Geometry) f.getAttribute("geometry");
-                Double mean = (Double) f.getAttribute("smc_mat");
+                while (iterator.hasNext()) {
+                    SimpleFeature f = iterator.next();
+                    Geometry poly = (Geometry) f.getAttribute("geometry");
+                    Double mean = (Double) f.getAttribute("smc_mat");
 
-                String polyKey = poly.toString();
-                MeanGridCell cell = yearMeanMap.get(polyKey);
-                if (cell == null) {
-                    cell = new MeanGridCell(poly, mean);
-                    yearMeanMap.put(polyKey, cell);
-                } else {
-                    cell.addValue(mean);
+                    String polyKey = poly.toString();
+                    MeanGridCell cell = yearMeanMap.get(polyKey);
+                    if (cell == null) {
+                        cell = new MeanGridCell(poly, mean);
+                        yearMeanMap.put(polyKey, cell);
+                    } else {
+                        cell.addValue(mean);
+                    }
+                    processed++;
+                    if (processed % batchSize == 0) {
+                        System.gc();
+                    }
                 }
-                processed++;
-                if (processed % batchSize == 0) {
-                    System.gc();
-                }
+
             }
         } catch (IOException e) {
             throw new ProcessException("Error in requesting features from combined filter");
