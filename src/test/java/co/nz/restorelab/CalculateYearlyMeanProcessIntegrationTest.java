@@ -9,7 +9,6 @@ import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.process.ProcessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -20,9 +19,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-public class CalculateYearlyMeanProcessIntegration {
+public class CalculateYearlyMeanProcessIntegrationTest {
 
-    NewCalculateYearlyMean process;
+    CalculateYearlyMean process;
     MockSoilMoisture mock;
 
     @Mock
@@ -84,12 +83,12 @@ public class CalculateYearlyMeanProcessIntegration {
         when(mockFeatureTypeInfo.getMetadata()).thenReturn(Mockito.mock(MetadataMap.class));
         when((SimpleFeatureSource) mockFeatureTypeInfo.getFeatureSource(any(), any())).thenReturn(mockMeanLayer);
 
-        process = new NewCalculateYearlyMean(mock.mockCatalog);
+        process = new CalculateYearlyMean(mock.mockCatalog);
     }
 
     @Test
     public void testGoodData() {
-        String result = process.execute(2, mock.mockProgressListener);
+        String result = process.execute(mock.mockProgressListener);
 
     }
 
