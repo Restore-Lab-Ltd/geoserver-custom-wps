@@ -9,11 +9,11 @@ import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.filter.Filter;
 import org.geotools.api.filter.FilterFactory;
 import org.geotools.api.filter.expression.Expression;
+import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.MathTransform;
-import org.geotools.coverage.grid.GridCoverage2D;
-import org.geotools.coverage.grid.GridCoverageFactory;
-import org.geotools.coverage.grid.GridGeometry2D;
+import org.geotools.api.referencing.operation.TransformException;
+import org.geotools.coverage.grid.*;
 import org.geotools.coverage.processing.Operations;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
@@ -28,11 +28,9 @@ import org.geotools.process.factory.DescribeResult;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Geometry;
 
-import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.Point2D;
 import java.awt.image.*;
-import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -101,171 +99,146 @@ public class InundationBathtub implements GeoServerProcess {
 
             // Load in the DEM
             CoverageInfo demCoverage = catalog.getCoverageByName("restore-lab:NZ_DEM_4326_30m");
-            GridCoverage2D dem = (GridCoverage2D) resourcePool.getGridCoverage(demCoverage, null, null);
-            CoordinateReferenceSystem demCRS = dem.getCoordinateReferenceSystem2D();
+            ReferencedEnvelope bounds = featureCollection.getBounds().transform(demCoverage.getCRS(), true);
 
-            // Create a transform to go from source to target
+            GridCoverage2D fullDem = (GridCoverage2D) resourcePool.getGridCoverage(demCoverage, null, null);
+            CoordinateReferenceSystem demCRS = fullDem.getCoordinateReferenceSystem2D();
+
+            //Crop DEM
+            GridCoverage2D aoiDem = (GridCoverage2D) new Operations(null).crop(fullDem, bounds);
             MathTransform transform = CRS.findMathTransform(pointCRS, demCRS, true);
 
-            // Compute AOI BBOX and collect grid seeds
-            double minLon = Double.POSITIVE_INFINITY, maxLon = Double.NEGATIVE_INFINITY;
-            double minLat = Double.POSITIVE_INFINITY, maxLat = Double.NEGATIVE_INFINITY;
-            Deque<Point2D.Double> queue = new ArrayDeque<>();
-
-            try (SimpleFeatureIterator it = featureCollection.features()) {
-                while (it.hasNext()) {
-                    SimpleFeature f = it.next();
-                    // Convert from source CRS to target (dem)
-                    Geometry geom3857 = (Geometry) f.getDefaultGeometry();
-                    Geometry geom4326 = JTS.transform(geom3857, transform);
-                    double lon = geom4326.getCoordinate().x;
-                    double lat = geom4326.getCoordinate().y;
-                    minLon = Math.min(minLon, lon);
-                    maxLon = Math.max(maxLon, lon);
-                    minLat = Math.min(minLat, lat);
-                    maxLat = Math.max(maxLat, lat);
-
-                    queue.add(new Point2D.Double(lon, lat));
-                }
-            }
-
             // Crop dem to AOI
-            double buf = 0.1;
-            ReferencedEnvelope aoiEnv = new ReferencedEnvelope(
-                    minLon - buf, maxLon + buf,
-                    minLat - buf, maxLat + buf,
-                    demCRS
-            );
-            GridCoverage2D aoiDem = (GridCoverage2D) new Operations(null).crop(dem, aoiEnv);
-
-            GridGeometry2D aoiGG = aoiDem.getGridGeometry();
-            GridEnvelope aoiRange = aoiGG.getGridRange();
-            int originX = aoiRange.getLow(0);
-            int originY = aoiRange.getLow(1);
             RenderedImage renderedImage = aoiDem.getRenderedImage();
-            int minX = renderedImage.getMinX();
-            int minY = renderedImage.getMinY();
-            int w = renderedImage.getWidth();
-            int h = renderedImage.getHeight();
 
-            Raster demRaster = renderedImage.getData(new Rectangle(minX, minY, w, h));
-
-            Deque<Point> realQueue = new ArrayDeque<>();
-            for (Point2D.Double worldPt : queue) {
-                if (!aoiEnv.contains(new Position2D(worldPt))) {
-                    System.out.println("Point outside AOI: " + worldPt);
-                    continue;
-                }
-                try {
-                    GridCoordinates globalGC = aoiGG.worldToGrid(
-                            new Position2D(demCRS, worldPt.x, worldPt.y)
+            Deque<Point> seedPoints = transformPoints(
+                    featureCollection,
+                    aoiDem.getGridGeometry(),
+                    transform, bounds
                     );
-                    // these are in the original DEM pixel space:
-                    int globalCol = globalGC.getCoordinateValue(0);
-                    int globalRow = globalGC.getCoordinateValue(1);
-
-                    // shift them to [0…w-1],[0…h-1] in the cropped grid:
-                    int localCol = globalCol - originX;
-                    int localRow = globalRow - originY;
-
-                    if (localCol >= 0 && localCol < w && localRow >= 0 && localRow < h) {
-                        realQueue.add(new Point(localCol, localRow));
-                        System.out.println("Mapped to pixel: " +
-                                localCol + "," + localRow);
-                    } else {
-                        System.out.println("Mapped pixel outside raster: " +
-                                localCol + "," + localRow);
-                    }
-                } catch (Exception ex) {
-                    System.out.println("worldToGrid error: " + ex.getMessage());
-                }
-            }
 
             // Run the bathtub model
-            BitSet mask = new BitSet(w * h);
-            System.out.println(realQueue.size());
-            while (!realQueue.isEmpty()) {
-                Point p = realQueue.pop();
-                int x0 = p.x, y0 = p.y;
-
-                if (x0 < 0 || x0 >= w || y0 < 0 || y0 >= h) continue;
-
-
-                int idx = y0 * w + x0;
-                if (mask.get(idx)) continue;
-
-                double elevation = demRaster.getSampleDouble(x0 + minX, y0 + minY, 0);
-                if (Double.isNaN(elevation)) continue;
-
-                mask.set(idx);
-
-                // Check 8 neighbors
-                for (int dy = -1; dy <= 1; dy++) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        if (dx == 0 && dy == 0) continue;
-                        int nx = x0 + dx;
-                        int ny = y0 + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-
-                        int nIdx = ny * w + nx;
-                        if (mask.get(nIdx)) continue;
-
-                        double neighborElevation = demRaster.getSampleDouble(nx + minX, ny + minY, 0);
-                        if (Double.isNaN(neighborElevation)) continue;
-
-                        // Flood only if neighbor is lower or equal
-                        if (neighborElevation <= elevation) {
-                            realQueue.add(new Point(nx, ny));
-                        }
-                    }
-                }
-            }
-
-            System.out.println("Flooded cells: " + mask.cardinality());
-
-            BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    int i = y * w + x;
-                    int val = mask.get(i) ? 255 : 0;
-                    img.getRaster().setSample(x, y, 0, val);
-                }
-            }
-            ImageIO.write(img, "png", new File("/tmp/flood-debug.png"));
-
-            SampleModel sm = new MultiPixelPackedSampleModel(
-                    DataBuffer.TYPE_BYTE,
-                    w,
-                    h,
-                    1
-            );
-
-            int bytesPerRow = (int) Math.ceil(w / 8.0);
-            int packedBytes = bytesPerRow * h;
-            byte[] packedData = new byte[packedBytes];
-
-
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    int i = y * w + x;
-                    if (mask.get(i)) {
-                        int byteIndex = y * bytesPerRow + (x / 8);
-                        int bitIndex = 7 - (x % 8); // MSB first
-                        packedData[byteIndex] |= (byte) (1 << bitIndex);
-                    }
-                }
-            }
-
-
-            DataBufferByte dataBuffer = new DataBufferByte(packedData, packedData.length);
-//
-            WritableRaster outRaster = WritableRaster.createWritableRaster(sm, dataBuffer, new Point(0,0));
-            GridCoverageFactory gridCoverageFactory = new GridCoverageFactory();
-            return gridCoverageFactory.create("bathtub_flood", outRaster, aoiDem.getEnvelope2D());
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-            System.out.println(Arrays.toString(e.getStackTrace()));
+            BitSet mask = runBathtubModel(renderedImage, seedPoints, renderedImage.getWidth(), renderedImage.getHeight(), renderedImage.getMinX(), renderedImage.getMinY());
+            return createFloodCoverage(mask, renderedImage.getWidth(), renderedImage.getHeight(), aoiDem);
+        } catch (TransformException | IOException | FactoryException e) {
+            throw new ProcessException(e);
         }
-        return null;
+    }
+
+    private BitSet runBathtubModel(RenderedImage image, Deque<Point> seedPoints, int width, int height, int minX, int minY) {
+        BitSet mask = new BitSet(width * height);
+
+        final int[] dx = {-1,0,1,-1,1,-1,0,1};
+        final int[] dy = {-1,-1,-1,0,0,1,1,1};
+        ArrayDeque<int[]> queue = new ArrayDeque<>(seedPoints.size()*8);
+
+        for (Point p : seedPoints) {
+            queue.add(new int[]{p.x,p.y});
+        }
+        Rectangle tileRect = new Rectangle(0,0,256,256);
+        while (!queue.isEmpty()) {
+            int[] p = queue.poll();
+            int x = p[0], y = p[1];
+            if (x < 0 || x >= width || y < 0 || y>= height) continue;
+
+            int idx = y * width + x;
+            if (mask.get(idx)) continue;
+
+            tileRect.x = x + minX;
+            tileRect.y = y + minY;
+            tileRect.width = 1;
+            tileRect.height = 1;
+
+            Raster pointRaster = image.getData(tileRect);
+            double elevation = pointRaster.getSampleDouble(tileRect.x, tileRect.y, 0);
+            if (Double.isNaN(elevation)) continue;
+
+            mask.set(idx);
+
+            for (int i = 0; i < 8; i++) {
+                int nx = x + dx[i];
+                int ny = y + dy[i];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+
+                int nIdx = ny * width + nx;
+                if (mask.get(nIdx)) continue;
+
+                tileRect.x = nx + minX;
+                tileRect.y = ny + minY;
+
+                Raster neighbourRaster = image.getData(tileRect);
+                double neighbourElevation = neighbourRaster.getSampleDouble(tileRect.x, tileRect.y, 0);
+
+                if (Double.isNaN(neighbourElevation)) continue;
+                if (neighbourElevation < elevation) {
+                    queue.add(new int[]{nx, ny});
+                }
+            }
+        }
+        return mask;
+    }
+
+    private GridCoverage2D createFloodCoverage(
+            BitSet mask,
+            int width,
+            int height,
+            GridCoverage2D aoiDem
+    ) {
+        int bytesPerRow = (int) Math.ceil(width/8.0);
+        byte[] packedData = new byte[bytesPerRow * height];
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int i = y * width + x;
+                if (mask.get(i)) {
+                    int byteIndex = y * bytesPerRow + (x/8);
+                    int bitIndex = 7 - (x%8);
+                    packedData[byteIndex] |= (byte) (1 << bitIndex);
+                }
+            }
+        }
+
+        SampleModel sm = new MultiPixelPackedSampleModel(DataBuffer.TYPE_BYTE, width, height, 1);
+        DataBufferByte dataBuffer = new DataBufferByte(packedData, packedData.length);
+        WritableRaster outRaster = WritableRaster.createWritableRaster(sm, dataBuffer, new Point(0,0));
+
+        GridCoverageFactory factory = new GridCoverageFactory();
+        return factory.create("bathtub_flood", outRaster, aoiDem.getEnvelope2D());
+    }
+
+    private Deque<Point> transformPoints(SimpleFeatureCollection featureCollection, GridGeometry2D gridGeometry, MathTransform transform, ReferencedEnvelope aoiEnv) {
+        CoordinateReferenceSystem demCRS = gridGeometry.getCoordinateReferenceSystem();
+        GridEnvelope range = gridGeometry.getGridRange();
+        int originX = range.getLow(0);
+        int originY = range.getLow(1);
+
+        Deque<Point> result = new ArrayDeque<>();
+
+        try (SimpleFeatureIterator it = featureCollection.features()) {
+            while (it.hasNext()) {
+                SimpleFeature f = it.next();
+                Geometry geom = (Geometry) f.getDefaultGeometry();
+
+                Geometry transformed = JTS.transform(geom, transform);
+
+                Point2D.Double worldPt = new Point2D.Double(
+                        transformed.getCoordinate().x,
+                        transformed.getCoordinate().y
+                );
+
+                if (!aoiEnv.contains(worldPt.x, worldPt.y)) continue;
+
+                GridCoordinates gc = gridGeometry.worldToGrid(
+                        new Position2D(demCRS, worldPt.x, worldPt.y)
+                );
+                int localCol = gc.getCoordinateValue(0) - originX;
+                int localRow = gc.getCoordinateValue(1) - originY;
+
+                result.add(new Point(localCol, localRow));
+            }
+        } catch (TransformException e) {
+            throw new ProcessException("Error in transforming point geometry");
+        }
+        return result;
     }
 }
