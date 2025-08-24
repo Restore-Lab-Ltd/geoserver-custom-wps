@@ -3,10 +3,7 @@ package co.nz.restorelab;
 import org.geoserver.catalog.*;
 import org.geoserver.catalog.impl.DimensionInfoImpl;
 import org.geoserver.wps.gs.GeoServerProcess;
-import org.geotools.api.data.DataStore;
-import org.geotools.api.data.FeatureWriter;
-import org.geotools.api.data.SimpleFeatureSource;
-import org.geotools.api.data.Transaction;
+import org.geotools.api.data.*;
 import org.geotools.api.feature.simple.SimpleFeature;
 import org.geotools.api.feature.simple.SimpleFeatureType;
 import org.geotools.api.filter.Filter;
@@ -24,6 +21,7 @@ import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.process.ProcessException;
+import org.geotools.process.factory.DescribeParameter;
 import org.geotools.process.factory.DescribeProcess;
 import org.geotools.process.factory.DescribeResult;
 import org.geotools.referencing.CRS;
@@ -40,13 +38,14 @@ import java.util.List;
 )
 public class CalculateYearlyMean implements GeoServerProcess {
     Catalog catalog;
+    private final String[] typeLookup = {"monthly", "weekly", "daily"};
     CalculateYearlyMean(Catalog catalog) {
         this.catalog = catalog;
     }
 
     @DescribeResult(description = "Returns the layer name that was created/modified")
     public String execute(
-//        @DescribeParameter(name = "Starting year") int year,
+        @DescribeParameter(name = "Starting year", description = "0 = monthly, 1 = weekly, 2 = daily") int typeInt,
         ProgressListener progressListener
     ) throws ProcessException {
         LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_measurements");
@@ -64,16 +63,17 @@ public class CalculateYearlyMean implements GeoServerProcess {
             throw new ProcessException(e);
         }
 
-        // loop over previous 12 months
-        Calendar calendar = Calendar.getInstance();
-
-        calendar.add(Calendar.MONTH, -1); // move to previous month
+        String type = typeLookup[typeInt];
 
         // get data store for writing to
         WorkspaceInfo ws = catalog.getWorkspaceByName("restore-lab");
         DataStoreInfo storeInfo = catalog.getDefaultDataStore(ws);
 
-        SimpleFeatureSource meanLayer = getMeanLayer(storeInfo);
+        SimpleFeatureSource meanLayer = getMeanLayer(storeInfo, type);
+
+        Calendar calendar = Calendar.getInstance();
+
+        calendar.add(Calendar.MONTH, -1); // move to previous month
 
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttrSMC = filterFactory.property("utc_time");
@@ -81,85 +81,131 @@ public class CalculateYearlyMean implements GeoServerProcess {
 
         GridCalculator gridCalculator;
         try {
-            gridCalculator = new GridCalculator(800);
+            gridCalculator = new GridCalculator(0);
         } catch (FactoryException | NoninvertibleTransformException e) {
             throw new ProcessException("Error creating the GridCalculator", e);
         }
 
-        for (int i = 0; i < 12; i++) {
-            // Get first day of month
-            calendar.set(Calendar.DAY_OF_MONTH, 1);
-            calendar.set(Calendar.HOUR_OF_DAY, 0);
-            calendar.set(Calendar.MINUTE, 0);
-            calendar.set(Calendar.SECOND, 0);
-            Date startDate = calendar.getTime();
+        if (typeInt == 0) {
+            gridCalculator.setGridSize(800);
+            for (int i = 0; i < 12; i++) {
+                // Get first day of month
+                calendar.set(Calendar.DAY_OF_MONTH, 1);
+                calendar.set(Calendar.HOUR_OF_DAY, 0);
+                calendar.set(Calendar.MINUTE, 0);
+                calendar.set(Calendar.SECOND, 0);
+                Date startDate = calendar.getTime();
 
-            // Get last day of month
-            int lastDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH);
-            calendar.set(Calendar.DAY_OF_MONTH, lastDay);
-            calendar.set(Calendar.HOUR_OF_DAY, 23);
-            calendar.set(Calendar.MINUTE, 59);
-            calendar.set(Calendar.SECOND, 59);
-            Date endDate = calendar.getTime();
+                // Get last day of month
+                int lastDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH);
+                calendar.set(Calendar.DAY_OF_MONTH, lastDay);
+                calendar.set(Calendar.HOUR_OF_DAY, 23);
+                calendar.set(Calendar.MINUTE, 59);
+                calendar.set(Calendar.SECOND, 59);
+                Date endDate = calendar.getTime();
 
-            // check to see if we already have data for this range computed.
-            Filter timeFilterCheck = filterFactory.between(timeAttrCheck,  filterFactory.literal(startDate), filterFactory.literal(endDate));
-            SimpleFeatureCollection smcRange;
-            try {
-                SimpleFeatureCollection range = meanLayer.getFeatures(timeFilterCheck);
-                if (!range.isEmpty()) {
-                    calendar.add(Calendar.MONTH, -1);
-                    continue;
-                }
-                // Get features for month from layer
-                Filter timeFilter = filterFactory.between(timeAttrSMC, filterFactory.literal(startDate), filterFactory.literal(endDate));
-                smcRange = featureSource.getFeatures(timeFilter);
-            } catch (IOException e) {
-                throw new ProcessException("Error getting features in the mean layer check");
+                Filter timeFilterSMC = filterFactory.between(
+                        timeAttrSMC,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+                Filter timeFilterCheck = filterFactory.between(
+                        timeAttrCheck,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+
+                processData(
+                        gridCalculator,
+                        timeFilterCheck,
+                        timeFilterSMC,
+                        meanLayer,
+                        featureSource,
+                        progressListener,
+                        type,
+                        storeInfo,
+                        startDate
+                );
+
+                calendar.add(Calendar.MONTH, -1);
             }
-
-            // Aggregate layers
-            List<GridCell> grid = gridCalculator.aggregate(smcRange, progressListener);
-            // Make simple feature collection for writing
-
-            SimpleFeatureBuilder builder;
-            try {
-                builder = new SimpleFeatureBuilder(getLayerFeatureType());
-            } catch (FactoryException e) {
-                throw new ProcessException("Error in creating the feature builder", e);
-            }
-
-            try {
-                DataStore dataStore = (DataStore) storeInfo.getDataStore(null);
-                Transaction transaction = new DefaultTransaction("create");
-
-                try (FeatureWriter<SimpleFeatureType, SimpleFeature> writer = dataStore.getFeatureWriterAppend("smc_year_mean", transaction)) {
-                    int fid = 0;
-                    for (GridCell cell : grid) {
-                        builder.add(cell.getPolygon());
-                        builder.add(cell.average());
-                        builder.add(startDate);
-                        SimpleFeature feature = builder.buildFeature("fid-"+fid++);
-                        SimpleFeature newFeature = writer.next();
-
-                        newFeature.setAttributes(feature.getAttributes());
-                        writer.write();
-                    }
-                }
-                transaction.commit();
-            } catch (IOException e) {
-                throw new ProcessException("Error in getting dataStore to write to", e);
-            }
-            calendar.add(Calendar.MONTH, -1);
+        } else if (typeInt == 1) {
+            // process weekly
+            throw new ProcessException("Not yet implemented");
+        } else if (typeInt == 2) {
+            // process daily
+            throw new ProcessException("Not yet implemented");
+        } else {
+            throw new ProcessException("Invalid type selection, choose from 0,1,2");
         }
-        return "Hey";
+        return "Successfully created mean layer for " + type;
     }
 
-    private SimpleFeatureSource getMeanLayer(DataStoreInfo dataStoreInfo) throws ProcessException {
-        LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_year_mean");
+    private void processData(
+            GridCalculator gridCalculator,
+            Filter timeFilterCheck,
+            Filter timeFilter,
+            SimpleFeatureSource meanLayer,
+            SimpleFeatureSource featureSource,
+            ProgressListener progressListener,
+            String type,
+            DataStoreInfo storeInfo,
+            Date startDate
+            ) {
+        // check to see if we already have data for this range computed.
+        SimpleFeatureCollection smcRange;
+        try {
+            Query query = new Query();
+            query.setFilter(timeFilterCheck);
+            int count = meanLayer.getCount(query);
+            if (count >= 0) {
+                return;
+            }
+            // Get features for month from layer
+            smcRange = featureSource.getFeatures(timeFilter);
+        } catch (IOException e) {
+            throw new ProcessException("Error getting features in the mean layer check");
+        }
+
+        // Aggregate layers
+        List<GridCell> grid = gridCalculator.aggregate(smcRange, progressListener);
+        // Make simple feature collection for writing
+
+        SimpleFeatureBuilder builder;
+        try {
+            builder = new SimpleFeatureBuilder(getLayerFeatureType(type));
+        } catch (FactoryException e) {
+            throw new ProcessException("Error in creating the feature builder", e);
+        }
+
+        try {
+            DataStore dataStore = (DataStore) storeInfo.getDataStore(null);
+            Transaction transaction = new DefaultTransaction("create");
+
+            try (FeatureWriter<SimpleFeatureType, SimpleFeature> writer = dataStore.getFeatureWriterAppend("smc_"+type+"_mean", transaction)) {
+                int fid = 0;
+                for (GridCell cell : grid) {
+                    builder.add(cell.getPolygon());
+                    builder.add(cell.average());
+                    builder.add(startDate);
+                    SimpleFeature feature = builder.buildFeature("fid-" + fid++);
+                    SimpleFeature newFeature = writer.next();
+
+                    newFeature.setAttributes(feature.getAttributes());
+                    writer.write();
+                }
+            }
+            transaction.commit();
+        } catch (IOException e) {
+            throw new ProcessException("Error in getting dataStore to write to", e);
+        }
+    }
+
+    private SimpleFeatureSource getMeanLayer(DataStoreInfo dataStoreInfo, String type) throws ProcessException {
+        LayerInfo layerInfo = catalog.getLayerByName("restore-lab:smc_" + type + "_mean");
 
         if (layerInfo == null) {
-            return createMeanLayer(dataStoreInfo);
+            return createMeanLayer(dataStoreInfo, type);
         }
 
         FeatureTypeInfo featureTypeInfo = (FeatureTypeInfo) layerInfo.getResource();
@@ -172,11 +218,11 @@ public class CalculateYearlyMean implements GeoServerProcess {
         return featureSource;
     }
 
-    private SimpleFeatureSource createMeanLayer(DataStoreInfo dataStoreInfo) throws ProcessException {
+    private SimpleFeatureSource createMeanLayer(DataStoreInfo dataStoreInfo, String type) throws ProcessException {
         // Create the featureType in the database
         try {
             DataStore dataStore = (DataStore) dataStoreInfo.getDataStore(null);
-            SimpleFeatureType schema = getLayerFeatureType();
+            SimpleFeatureType schema = getLayerFeatureType(type);
             dataStore.createSchema(schema);
         } catch (IOException | FactoryException e) {
             throw new ProcessException("Error getting dataStore", e);
@@ -184,8 +230,8 @@ public class CalculateYearlyMean implements GeoServerProcess {
 
         // Register with geoserver catalog
         FeatureTypeInfo featureTypeInfo = catalog.getFactory().createFeatureType();
-        featureTypeInfo.setName("smc_year_mean");
-        featureTypeInfo.setNativeName("smc_year_mean");
+        featureTypeInfo.setName("smc_"+type+"_mean");
+        featureTypeInfo.setNativeName("smc_"+type+"_mean");
         featureTypeInfo.setStore(dataStoreInfo);
         featureTypeInfo.setEnabled(true);
         featureTypeInfo.setProjectionPolicy(ProjectionPolicy.FORCE_DECLARED);
@@ -223,7 +269,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
             LayerInfo newLayer = catalog.getFactory().createLayer();
             newLayer.setResource(featureTypeInfo);
             newLayer.setEnabled(true);
-            newLayer.setName("smc_year_mean");
+            newLayer.setName("smc_"+type+"_mean");
 
             catalog.add(newLayer);
 
@@ -233,9 +279,9 @@ public class CalculateYearlyMean implements GeoServerProcess {
         }
     }
 
-    private SimpleFeatureType getLayerFeatureType() throws FactoryException {
+    private SimpleFeatureType getLayerFeatureType(String type) throws FactoryException {
         SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
-        featureTypeBuilder.setName("smc_year_mean");
+        featureTypeBuilder.setName("smc_"+type+"_mean");
         featureTypeBuilder.setCRS(CRS.decode("EPSG:3857"));
         featureTypeBuilder.add("geometry", Polygon.class);
         featureTypeBuilder.add("smc_mat", Double.class);

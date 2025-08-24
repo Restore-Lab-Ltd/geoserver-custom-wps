@@ -18,7 +18,7 @@ import org.locationtech.jts.geom.*;
 import java.util.*;
 
 public class GridCalculator {
-    private final double cellSize;
+    private double cellSize;
     private final GeometryFactory geometryFactory;
     private final MathTransform transform;
     private final MathTransform inverseTransform;
@@ -77,6 +77,10 @@ public class GridCalculator {
             throw new RuntimeException("Error processing features", e);
         }
         return counts;
+    }
+
+    public void setGridSize(int size) {
+        this.cellSize = size;
     }
 
     public static SimpleFeatureType getResultFeatureType(String outputCrs, String name) throws FactoryException {
