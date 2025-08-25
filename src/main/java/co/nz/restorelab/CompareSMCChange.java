@@ -33,6 +33,8 @@ import java.util.*;
 @DescribeProcess(title = "compareSMCChange", description = "Computes the gridded change between a date range and the previous 12 months.")
 public class CompareSMCChange implements GeoServerProcess {
     Catalog catalog;
+    private final String[] meanLookup = {"monthly", "weekly", "daily"};
+    private final int[] gridLookup = {800, 1200, 1800};
     CompareSMCChange(Catalog catalog) {
         this.catalog = catalog;
     }
@@ -41,11 +43,32 @@ public class CompareSMCChange implements GeoServerProcess {
     public SimpleFeatureCollection execute(
             @DescribeParameter(name = "startDate", description = "Starting date in format YYYY-MM-DDTHH:MM:SS") String startTime,
             @DescribeParameter(name = "endDate", description = "Ending date in format YYYY-MM-DDTHH:MM:SS") String endTime,
+            @DescribeParameter(name = "Mean To Compare To", description = "Choose between 0 for monthly mean, 1 for weekly mean, and 2 for daily mean", defaultValue = "1") int meanInt,
             ProgressListener progressListener
     ) throws ProcessException {
+        if (meanInt > 2 || meanInt < 0) {
+            throw new ProcessException("Mean lookup needs to be between 0 and 3");
+        }
+        // Convert and validate start and end times
+        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+        Date startDate, endDate;
+        try {
+            startDate = simpleDateFormat.parse(startTime);
+            endDate = simpleDateFormat.parse(endTime);
+        } catch (ParseException e) {
+            throw new ProcessException("Dates are in an invalid format");
+        }
+
+        if (startDate.after(endDate)) {
+            throw new ProcessException("Start date is after the end date");
+        }
+        if (startDate.compareTo(endDate) == 0) {
+            throw new ProcessException("Start date is equal to the end date");
+        }
         // get and validate layers
         LayerInfo layerInfoSMC = catalog.getLayerByName("restore-lab:smc_measurements");
-        LayerInfo layerInfoMean = catalog.getLayerByName("restore-lab:smc_year_mean");
+        String mean = meanLookup[meanInt];
+        LayerInfo layerInfoMean = catalog.getLayerByName("restore-lab:smc_" + mean + "_mean");
 
         if (layerInfoSMC == null) {
             throw new ProcessException("Cannot find the SMC measurements layer");
@@ -65,26 +88,9 @@ public class CompareSMCChange implements GeoServerProcess {
             throw new ProcessException("Error while getting the feature source for the layers", e);
         }
 
-        // Convert and validate start and end times
-        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-        Date startDate, endDate;
-        try {
-            startDate = simpleDateFormat.parse(startTime);
-            endDate = simpleDateFormat.parse(endTime);
-        } catch (ParseException e) {
-            throw new ProcessException("Dates are in an invalid format");
-        }
-
-        if (startDate.after(endDate)) {
-            throw new ProcessException("Start date is after the end date");
-        }
-        if (startDate.compareTo(endDate) == 0) {
-            throw new ProcessException("Start date is equal to the end date");
-        }
-
         GridCalculator gridCalculator;
         try {
-            gridCalculator = new GridCalculator(800);
+            gridCalculator = new GridCalculator(gridLookup[meanInt]);
         } catch (FactoryException | NoninvertibleTransformException e) {
             throw new ProcessException("Error while creating the GridCalculator", e);
         }
@@ -106,7 +112,7 @@ public class CompareSMCChange implements GeoServerProcess {
             throw new ProcessException("Error while filtering SMC data", e);
         }
         ReferencedEnvelope bounds = rangeSMC.getBounds();
-        // get feature collection for mean layer limiting to the interested area
+        // get feature collection for meanInt layer limiting to the interested area
         Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, endDate, bounds);
 
         Map<String,Double> meanLookup = createMeanLookup(meanGridCellSet);
