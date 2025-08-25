@@ -87,9 +87,13 @@ public class CalculateYearlyMeanProcessIntegrationTest {
     }
 
     @Test
-    public void testGoodData() {
-        String result = process.execute(2, mock.mockProgressListener);
+    public void testGoodDataMonthly() {
+        String result = process.execute(0, mock.mockProgressListener);
+    }
 
+    @Test
+    public void testGoodDataWeekly() {
+        String result = process.execute(1, mock.mockProgressListener);
     }
 
 }

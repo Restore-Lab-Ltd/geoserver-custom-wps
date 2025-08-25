@@ -68,8 +68,6 @@ public class GridCalculator {
                             }
                             counts.add(cell);
                         }
-                        float progress = 0.33f * (float) (col+row) / colEnd + rowEnd;
-                        listener.progress(progress);
                     }
                 }
             }

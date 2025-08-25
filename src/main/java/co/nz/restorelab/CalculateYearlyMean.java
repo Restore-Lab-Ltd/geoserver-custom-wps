@@ -73,8 +73,6 @@ public class CalculateYearlyMean implements GeoServerProcess {
 
         Calendar calendar = Calendar.getInstance();
 
-        calendar.add(Calendar.MONTH, -1); // move to previous month
-
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttrSMC = filterFactory.property("utc_time");
         Expression timeAttrCheck = filterFactory.property("time");
@@ -87,8 +85,10 @@ public class CalculateYearlyMean implements GeoServerProcess {
         }
 
         if (typeInt == 0) {
+            calendar.add(Calendar.MONTH, -1); // move to previous month
             gridCalculator.setGridSize(800);
             for (int i = 0; i < 12; i++) {
+
                 // Get first day of month
                 calendar.set(Calendar.DAY_OF_MONTH, 1);
                 calendar.set(Calendar.HOUR_OF_DAY, 0);
@@ -126,15 +126,96 @@ public class CalculateYearlyMean implements GeoServerProcess {
                         storeInfo,
                         startDate
                 );
+                progressListener.progress((float) i /12);
 
                 calendar.add(Calendar.MONTH, -1);
             }
         } else if (typeInt == 1) {
             // process weekly
-            throw new ProcessException("Not yet implemented");
+            gridCalculator.setGridSize(1200);
+            calendar.add(Calendar.WEEK_OF_YEAR, -1);
+            for (int i =0; i < 52; i++) {
+                //Get first week
+                calendar.set(Calendar.DAY_OF_WEEK, calendar.getActualMinimum(Calendar.DAY_OF_WEEK));
+                calendar.set(Calendar.HOUR_OF_DAY, 0);
+                calendar.set(Calendar.MINUTE, 0);
+                calendar.set(Calendar.SECOND, 0);
+                Date startDate = calendar.getTime();
+
+                //Get ending day of week
+                calendar.set(Calendar.DAY_OF_WEEK, calendar.getActualMaximum(Calendar.DAY_OF_WEEK));
+                calendar.set(Calendar.HOUR_OF_DAY, 23);
+                calendar.set(Calendar.MINUTE, 59);
+                calendar.set(Calendar.SECOND, 59);
+                Date endDate = calendar.getTime();
+
+                Filter timeFilterSMC = filterFactory.between(
+                        timeAttrSMC,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+                Filter timeFilterCheck = filterFactory.between(
+                        timeAttrCheck,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+
+                processData(
+                        gridCalculator,
+                        timeFilterCheck,
+                        timeFilterSMC,
+                        meanLayer,
+                        featureSource,
+                        progressListener,
+                        type,
+                        storeInfo,
+                        startDate
+                );
+                progressListener.progress((float) i /52);
+                calendar.add(Calendar.WEEK_OF_YEAR, -1);
+            }
         } else if (typeInt == 2) {
             // process daily
-            throw new ProcessException("Not yet implemented");
+            gridCalculator.setGridSize(1800);
+            calendar.add(Calendar.DAY_OF_YEAR, -1);
+            for (int i = 0; i < 365; i++) {
+                // get day
+                calendar.set(Calendar.HOUR_OF_DAY, 0);
+                calendar.set(Calendar.MINUTE, 0);
+                calendar.set(Calendar.SECOND, 0);
+                Date startDate = calendar.getTime();
+
+                //get end of day
+                calendar.set(Calendar.HOUR_OF_DAY, 23);
+                calendar.set(Calendar.MINUTE, 59);
+                calendar.set(Calendar.SECOND, 59);
+                Date endDate = calendar.getTime();
+
+                Filter timeFilterSMC = filterFactory.between(
+                        timeAttrSMC,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+                Filter timeFilterCheck = filterFactory.between(
+                        timeAttrCheck,
+                        filterFactory.literal(startDate),
+                        filterFactory.literal(endDate)
+                );
+
+                processData(
+                        gridCalculator,
+                        timeFilterCheck,
+                        timeFilterSMC,
+                        meanLayer,
+                        featureSource,
+                        progressListener,
+                        type,
+                        storeInfo,
+                        startDate
+                );
+                progressListener.progress((float) i /365);
+                calendar.add(Calendar.DAY_OF_YEAR, -1);
+            }
         } else {
             throw new ProcessException("Invalid type selection, choose from 0,1,2");
         }
@@ -158,7 +239,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
             Query query = new Query();
             query.setFilter(timeFilterCheck);
             int count = meanLayer.getCount(query);
-            if (count >= 0) {
+            if (count > 0) {
                 return;
             }
             // Get features for month from layer
