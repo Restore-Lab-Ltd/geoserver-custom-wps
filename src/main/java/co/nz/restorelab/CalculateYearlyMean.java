@@ -258,10 +258,10 @@ public class CalculateYearlyMean implements GeoServerProcess {
         } catch (FactoryException e) {
             throw new ProcessException("Error in creating the feature builder", e);
         }
-
+        Transaction transaction = null;
         try {
             DataStore dataStore = (DataStore) storeInfo.getDataStore(null);
-            Transaction transaction = new DefaultTransaction("create");
+            transaction = new DefaultTransaction("create");
 
             try (FeatureWriter<SimpleFeatureType, SimpleFeature> writer = dataStore.getFeatureWriterAppend("smc_"+type+"_mean", transaction)) {
                 int fid = 0;
@@ -279,6 +279,10 @@ public class CalculateYearlyMean implements GeoServerProcess {
             transaction.commit();
         } catch (IOException e) {
             throw new ProcessException("Error in getting dataStore to write to", e);
+        } finally {
+            try {
+                if (transaction != null) transaction.close();
+            } catch (IOException ignored) {}
         }
     }
 
