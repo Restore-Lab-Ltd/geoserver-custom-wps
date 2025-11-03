@@ -51,6 +51,7 @@ public class CompareSMCChange implements GeoServerProcess {
         }
         // Convert and validate start and end times
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+        simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
         Date startDate, endDate;
         try {
             startDate = simpleDateFormat.parse(startTime);
