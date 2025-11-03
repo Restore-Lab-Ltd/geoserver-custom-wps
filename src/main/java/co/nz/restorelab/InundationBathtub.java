@@ -68,6 +68,7 @@ public class InundationBathtub implements GeoServerProcess {
 
             // Convert the start and end times
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
             Date startDate, endDate;
             try {
                 startDate = sdf.parse(startTime);
