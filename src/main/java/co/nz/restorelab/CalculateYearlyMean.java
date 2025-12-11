@@ -72,6 +72,8 @@ public class CalculateYearlyMean implements GeoServerProcess {
         SimpleFeatureSource meanLayer = getMeanLayer(storeInfo, type);
 
         Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.YEAR, 2024);
+        calendar.set(Calendar.DAY_OF_YEAR, 1);
 
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttrSMC = filterFactory.property("utc_time");
@@ -177,7 +179,7 @@ public class CalculateYearlyMean implements GeoServerProcess {
         } else if (typeInt == 2) {
             // process daily
             gridCalculator.setGridSize(1800);
-            calendar.add(Calendar.DAY_OF_YEAR, -1);
+            calendar.add(Calendar.DAY_OF_YEAR, 1);
             for (int i = 0; i < 365; i++) {
                 // get day
                 calendar.set(Calendar.HOUR_OF_DAY, 0);

@@ -114,7 +114,7 @@ public class CompareSMCChange implements GeoServerProcess {
         }
         ReferencedEnvelope bounds = rangeSMC.getBounds();
         // get feature collection for meanInt layer limiting to the interested area
-        Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, endDate, bounds);
+        Set<MeanGridCell> meanGridCellSet = calculateMean(featureSourceMean, bounds);
 
         Map<String,Double> meanLookup = createMeanLookup(meanGridCellSet);
         SimpleFeatureType resultType;
@@ -162,14 +162,15 @@ public class CompareSMCChange implements GeoServerProcess {
         return new ListFeatureCollection(resultType, results);
     }
 
-    private Set<MeanGridCell> calculateMean(SimpleFeatureSource featureSource, Date endDate, ReferencedEnvelope bounds) {
+    private Set<MeanGridCell> calculateMean(SimpleFeatureSource featureSource, ReferencedEnvelope bounds) {
         Map<String, MeanGridCell> yearMeanMap = new HashMap<>();
         Calendar calendar = Calendar.getInstance();
-        calendar.setTime(endDate);
-        Date filterEnd = calendar.getTime();
-        calendar.add(Calendar.YEAR, -1);
-        calendar.add(Calendar.DAY_OF_MONTH, 1);
+//        calendar.add(Calendar.YEAR, -1);
+//        calendar.add(Calendar.DAY_OF_MONTH, 1);
+        calendar.set(2024, Calendar.JANUARY, 1, 0, 0, 0);
         Date filterStart = calendar.getTime();
+        calendar.set(2024, Calendar.DECEMBER, 31, 23,59,59);
+        Date filterEnd = calendar.getTime();
 
         FilterFactory filterFactory = CommonFactoryFinder.getFilterFactory();
         Expression timeAttr = filterFactory.property("time");
