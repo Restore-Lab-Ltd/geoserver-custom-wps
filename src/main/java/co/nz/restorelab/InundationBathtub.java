@@ -37,6 +37,8 @@ import java.util.*;
 
 @DescribeProcess(title = "floodingInundationBathtub", description = "Runs Inundation Bathtub model on the inundation data points.")
 public class InundationBathtub implements GeoServerProcess {
+    // Override with -Dbathtub.max.cells=<long>; 0 disables the cap
+    private static final long MAX_OUTPUT_CELLS = Long.getLong("bathtub.max.cells", 0L);
     Catalog catalog;
 
     InundationBathtub(Catalog catalog) {
@@ -97,10 +99,22 @@ public class InundationBathtub implements GeoServerProcess {
             } catch (IOException e) {
                 throw new ProcessException("Error getting features", e);
             }
+            if (featureCollection == null) {
+                throw new ProcessException("No features returned for given time range");
+            }
+            ReferencedEnvelope featureBounds = featureCollection.getBounds();
+            if (featureBounds == null || featureBounds.isEmpty() || featureBounds.isNull()) {
+                throw new ProcessException("No measurements found in the requested time range");
+            }
 
             // Load in the DEM
             CoverageInfo demCoverage = catalog.getCoverageByName("restore-lab:NZ_DEM_4326_30m");
-            ReferencedEnvelope bounds = featureCollection.getBounds().transform(demCoverage.getCRS(), true);
+            ReferencedEnvelope demEnvelope = new ReferencedEnvelope(demCoverage.getNativeBoundingBox());
+            ReferencedEnvelope bounds = featureBounds.transform(demCoverage.getCRS(), true);
+            bounds = bounds.intersection(demEnvelope);
+            if (bounds.isEmpty()) {
+                throw new ProcessException("Measurement bounds do not intersect the DEM");
+            }
 
             GridCoverage2D fullDem = (GridCoverage2D) resourcePool.getGridCoverage(demCoverage, null, null);
             CoordinateReferenceSystem demCRS = fullDem.getCoordinateReferenceSystem2D();
@@ -134,16 +148,26 @@ public class InundationBathtub implements GeoServerProcess {
         ArrayDeque<int[]> queue = new ArrayDeque<>(seedPoints.size()*8);
 
         for (Point p : seedPoints) {
+            if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) {
+                continue;
+            }
+            int idx = p.y * width + p.x;
+            if (mask.get(idx)) continue;
+            mask.set(idx); // mark when queued to avoid duplicate enqueues
             queue.add(new int[]{p.x,p.y});
         }
         Rectangle tileRect = new Rectangle(0,0,256,256);
         while (!queue.isEmpty()) {
+            System.out.println("queue size: " + queue.size());
             int[] p = queue.poll();
             int x = p[0], y = p[1];
-            if (x < 0 || x >= width || y < 0 || y>= height) continue;
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
             int idx = y * width + x;
-            if (mask.get(idx)) continue;
+            // Already marked when enqueued; if seen again just skip
+            if (!mask.get(idx)) {
+                mask.set(idx);
+            }
 
             tileRect.x = x + minX;
             tileRect.y = y + minY;
@@ -153,6 +177,8 @@ public class InundationBathtub implements GeoServerProcess {
             Raster pointRaster = image.getData(tileRect);
             double elevation = pointRaster.getSampleDouble(tileRect.x, tileRect.y, 0);
             if (Double.isNaN(elevation)) continue;
+            // Stop propagation into sea-level/NoData areas so the fill doesn't run across ocean tiles
+            if (elevation <= 0) continue;
 
             mask.set(idx);
 
@@ -171,7 +197,9 @@ public class InundationBathtub implements GeoServerProcess {
                 double neighbourElevation = neighbourRaster.getSampleDouble(tileRect.x, tileRect.y, 0);
 
                 if (Double.isNaN(neighbourElevation)) continue;
-                if (neighbourElevation < elevation) {
+                if (neighbourElevation <= 0) continue;
+                if (neighbourElevation <= elevation) {
+                    mask.set(nIdx); // mark as soon as queued to prevent multiple queue entries
                     queue.add(new int[]{nx, ny});
                 }
             }
@@ -184,27 +212,18 @@ public class InundationBathtub implements GeoServerProcess {
             int width,
             int height,
             GridCoverage2D aoiDem
-    ) {
-        int bytesPerRow = (int) Math.ceil(width/8.0);
-        byte[] packedData = new byte[bytesPerRow * height];
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int i = y * width + x;
-                if (mask.get(i)) {
-                    int byteIndex = y * bytesPerRow + (x/8);
-                    int bitIndex = 7 - (x%8);
-                    packedData[byteIndex] |= (byte) (1 << bitIndex);
-                }
-            }
+    ) throws ProcessException {
+        long cells = (long) width * (long) height;
+        if (cells <= 0) {
+            throw new ProcessException("Invalid output raster dimensions");
+        }
+        if (MAX_OUTPUT_CELLS > 0 && cells > MAX_OUTPUT_CELLS) {
+            throw new ProcessException("Requested output too large (" + cells + " cells). Reduce area or increase guardrail (bathtub.max.cells).");
         }
 
-        SampleModel sm = new MultiPixelPackedSampleModel(DataBuffer.TYPE_BYTE, width, height, 1);
-        DataBufferByte dataBuffer = new DataBufferByte(packedData, packedData.length);
-        WritableRaster outRaster = WritableRaster.createWritableRaster(sm, dataBuffer, new Point(0,0));
-
         GridCoverageFactory factory = new GridCoverageFactory();
-        return factory.create("bathtub_flood", outRaster, aoiDem.getEnvelope2D());
+        RenderedImage maskImage = new MaskRenderedImage(mask, width, height, 256, 256);
+        return factory.create("bathtub_flood", maskImage, aoiDem.getEnvelope2D());
     }
 
     private Deque<Point> transformPoints(SimpleFeatureCollection featureCollection, GridGeometry2D gridGeometry, MathTransform transform, ReferencedEnvelope aoiEnv) {
@@ -241,5 +260,195 @@ public class InundationBathtub implements GeoServerProcess {
             throw new ProcessException("Error in transforming point geometry");
         }
         return result;
+    }
+
+    /**
+     * Lightweight RenderedImage that reads pixel bits from the in-memory BitSet and tiles on demand,
+     * avoiding allocation of a full byte array for very large outputs.
+     */
+    private static final class MaskRenderedImage implements RenderedImage {
+        private final BitSet mask;
+        private final int width;
+        private final int height;
+        private final int tileWidth;
+        private final int tileHeight;
+        private final SampleModel sampleModel;
+        private final ColorModel colorModel;
+
+        MaskRenderedImage(BitSet mask, int width, int height, int tileWidth, int tileHeight) {
+            this.mask = mask;
+            this.width = width;
+            this.height = height;
+            this.tileWidth = tileWidth;
+            this.tileHeight = tileHeight;
+            this.sampleModel = new MultiPixelPackedSampleModel(DataBuffer.TYPE_BYTE, tileWidth, tileHeight, 1);
+            byte[] ramp = new byte[]{0, (byte) 255};
+            this.colorModel = new IndexColorModel(1, 2, ramp, ramp, ramp);
+        }
+
+        @Override
+        public Vector<RenderedImage> getSources() {
+            return null;
+        }
+
+        @Override
+        public Object getProperty(String name) {
+            return java.awt.Image.UndefinedProperty;
+        }
+
+        @Override
+        public String[] getPropertyNames() {
+            return new String[0];
+        }
+
+        @Override
+        public ColorModel getColorModel() {
+            return colorModel;
+        }
+
+        @Override
+        public SampleModel getSampleModel() {
+            return sampleModel;
+        }
+
+        @Override
+        public int getWidth() {
+            return width;
+        }
+
+        @Override
+        public int getHeight() {
+            return height;
+        }
+
+        @Override
+        public int getMinX() {
+            return 0;
+        }
+
+        @Override
+        public int getMinY() {
+            return 0;
+        }
+
+        @Override
+        public int getNumXTiles() {
+            return (int) Math.ceil((double) width / tileWidth);
+        }
+
+        @Override
+        public int getNumYTiles() {
+            return (int) Math.ceil((double) height / tileHeight);
+        }
+
+        @Override
+        public int getMinTileX() {
+            return 0;
+        }
+
+        @Override
+        public int getMinTileY() {
+            return 0;
+        }
+
+        @Override
+        public int getTileWidth() {
+            return tileWidth;
+        }
+
+        @Override
+        public int getTileHeight() {
+            return tileHeight;
+        }
+
+        @Override
+        public int getTileGridXOffset() {
+            return 0;
+        }
+
+        @Override
+        public int getTileGridYOffset() {
+            return 0;
+        }
+
+        @Override
+        public Raster getTile(int tileX, int tileY) {
+            if (tileX < 0 || tileY < 0 || tileX >= getNumXTiles() || tileY >= getNumYTiles()) {
+                throw new IllegalArgumentException("Requested tile outside image");
+            }
+            int x = tileX * tileWidth;
+            int y = tileY * tileHeight;
+            int tw = Math.min(tileWidth, width - x);
+            int th = Math.min(tileHeight, height - y);
+
+            SampleModel sm = sampleModel.createCompatibleSampleModel(tw, th);
+            int bytesPerRow = (int) Math.ceil(tw / 8.0);
+            byte[] data = new byte[bytesPerRow * th];
+
+            for (int row = 0; row < th; row++) {
+                int globalY = y + row;
+                int rowOffset = row * bytesPerRow;
+                int baseIndex = globalY * width;
+                for (int col = 0; col < tw; col++) {
+                    int globalX = x + col;
+                    int bitIndex = baseIndex + globalX;
+                    if (mask.get(bitIndex)) {
+                        int byteIndex = rowOffset + (col >> 3);
+                        int bit = 7 - (col & 7);
+                        data[byteIndex] |= (byte) (1 << bit);
+                    }
+                }
+            }
+
+            DataBufferByte db = new DataBufferByte(data, data.length);
+            return WritableRaster.createWritableRaster(sm, db, new Point(x, y));
+        }
+
+        @Override
+        public Raster getData() {
+            return getData(new Rectangle(0, 0, width, height));
+        }
+
+        @Override
+        public Raster getData(Rectangle rect) {
+            Rectangle clip = new Rectangle(0, 0, width, height).intersection(rect);
+            if (clip.isEmpty()) {
+                throw new IllegalArgumentException("Requested region outside image");
+            }
+            int w = clip.width;
+            int h = clip.height;
+            SampleModel sm = sampleModel.createCompatibleSampleModel(w, h);
+            int bytesPerRow = (int) Math.ceil(w / 8.0);
+            byte[] data = new byte[bytesPerRow * h];
+
+            for (int row = 0; row < h; row++) {
+                int globalY = clip.y + row;
+                int rowOffset = row * bytesPerRow;
+                int baseIndex = globalY * width;
+                for (int col = 0; col < w; col++) {
+                    int globalX = clip.x + col;
+                    int bitIndex = baseIndex + globalX;
+                    if (mask.get(bitIndex)) {
+                        int byteIndex = rowOffset + (col >> 3);
+                        int bit = 7 - (col & 7);
+                        data[byteIndex] |= (byte) (1 << bit);
+                    }
+                }
+            }
+            DataBufferByte db = new DataBufferByte(data, data.length);
+            return WritableRaster.createWritableRaster(sm, db, new Point(clip.x, clip.y));
+        }
+
+        @Override
+        public WritableRaster copyData(WritableRaster raster) {
+            if (raster == null) {
+                raster = (WritableRaster) getData();
+                return raster;
+            }
+            Rectangle target = raster.getBounds();
+            Raster src = getData(target);
+            raster.setRect(src);
+            return raster;
+        }
     }
 }
